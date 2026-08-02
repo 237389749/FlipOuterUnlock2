@@ -59,11 +59,16 @@ object WidgetRemove : BaseHook() {
             hook(refreshMethod, Hooker { chain ->
                 val action = chain.args[0] as Int
                 if (action == ACTION_ADD_WINDOW) {
-                    chain.args[0] = ACTION_REMOVE_WINDOW
-                    chain.args[1] = false   // immediate, no hide animation
                     log("WidgetRemove: refreshWindow ADD → REMOVE")
+                    // libxposed Chain.getArgs() returns an IMMUTABLE list — new
+                    // arguments must be passed via proceed(Object[]), NOT by
+                    // mutating args in place (that throws
+                    // UnsupportedOperationException and silently no-ops the hook).
+                    // New args: REMOVE(2), withAnimation=false (immediate).
+                    chain.proceed(arrayOf<Any?>(ACTION_REMOVE_WINDOW, false))
+                } else {
+                    chain.proceed()
                 }
-                chain.proceed()
             })
             log("WidgetRemove: refreshWindow hooked → widget window never added")
         }.onFailure { log("WidgetRemove: hook failed", it) }
