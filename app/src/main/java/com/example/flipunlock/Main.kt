@@ -1,6 +1,7 @@
 package com.example.flipunlock
 
 import com.example.flipunlock.hook.BaseHook
+import com.example.flipunlock.hook.fliphome.WidgetRemove
 import com.example.flipunlock.hook.fliphome.WidgetTouchPassthrough
 import com.example.flipunlock.hook.system_server.AppRestriction
 import com.example.flipunlock.hook.system_server.AppWhitelist
@@ -24,6 +25,7 @@ class Main : XposedModule() {
     private val packageHooks = listOf<BaseHook>(
         // fliphome/ — widget overlay
         WidgetTouchPassthrough,         // widget window touch passthrough
+        WidgetRemove,                   // widget overlay complete removal
     )
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
