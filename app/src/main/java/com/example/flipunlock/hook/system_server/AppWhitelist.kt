@@ -26,13 +26,18 @@ import java.io.InputStream
  *       → return false (allow launch), short-circuiting ALL later checks
  *         (interceptlist, manifest property, cloud block lists)
  *
- * Because "allowstart" is checked first and short-circuits everything,
- * enrolling all packages effectively dissolves the entire allow/block
- * list mechanism — independent of the isInterceptListUnCheckFold gate hook.
+ * TIMING (critical — a naive eager version crashed system_server):
+ *   onSystemServerStarting fires BEFORE system services exist. Calling
+ *   ActivityThread.systemMain() there creates+attaches a SECOND ActivityThread
+ *   and corrupts system_server bootstrap → bootloop → LSPosed disables modules.
  *
- * This hook runs in system_server and:
- *   1. Whitelists all currently installed apps on boot
- *   2. Re-whitelists on package install/remove/replace
+ *   Therefore ALL work is deferred to a background thread that:
+ *     1. waits for ActivityThread.currentActivityThread() (the EXISTING thread,
+ *        obtained without creating a new one) to get the system context
+ *     2. waits for sys.boot_completed=1 — the -setForceDisplayCompatMode shell
+ *        handler is only registered at boot phase 600 (BOOT_COMPLETED), so the
+ *        dump command is a no-op before that
+ *     3. only then issues the dump command and registers the package receiver
  *
  * Process: system_server
  * Source: ContinuityPolicyService shell handler (registered at boot phase 600)
@@ -42,26 +47,62 @@ object AppWhitelist {
     @Volatile
     private var isUpdating = false
 
+    private const val WAIT_DEADLINE_MS = 180_000L  // give up if boot takes >3 min
+    private const val POLL_INTERVAL_MS = 2_000L
+
     fun hook(param: SystemServerStartingParam) {
-        log("AppWhitelist: setting up")
-        safeHook("AppWhitelist") {
-            // System context via ActivityThread.systemMain() (static)
-            val activityThreadClass = param.classLoader.loadClass("android.app.ActivityThread")
-            val systemContext = activityThreadClass.method("systemMain").invoke(null) as? Context
-                ?: run { log("AppWhitelist: systemMain returned null"); return@safeHook }
+        log("AppWhitelist: armed (deferred until boot completes)")
+        // Do NOTHING synchronously here — system_server is mid-bootstrap.
+        Thread {
+            runCatching { deferredInit() }
+                .onFailure { log("AppWhitelist: deferred init failed", it) }
+        }.start()
+    }
 
-            updateWhitelist(systemContext)
-
-            // Re-whitelist when packages change
-            val filter = IntentFilter().apply {
-                addAction(Intent.ACTION_PACKAGE_ADDED)
-                addAction(Intent.ACTION_PACKAGE_REMOVED)
-                addAction(Intent.ACTION_PACKAGE_REPLACED)
-                addDataScheme("package")
-            }
-            systemContext.registerReceiver(PackageChangeReceiver(systemContext), filter)
-            log("AppWhitelist: receiver registered, initial whitelist issued")
+    private fun deferredInit() {
+        val context = waitForSystemContext() ?: run {
+            log("AppWhitelist: gave up waiting for system context")
+            return
         }
+        waitForBootCompleted()
+        updateWhitelist(context)
+        registerPackageReceiver(context)
+        log("AppWhitelist: ready")
+    }
+
+    /**
+     * Poll until the EXISTING ActivityThread is available and return its
+     * system context. Never calls systemMain() (which would create a new
+     * ActivityThread and break system_server bootstrap).
+     */
+    private fun waitForSystemContext(): Context? {
+        val atClass = Class.forName("android.app.ActivityThread")
+        val currentAT = atClass.method("currentActivityThread")
+        val deadline = System.currentTimeMillis() + WAIT_DEADLINE_MS
+        while (System.currentTimeMillis() < deadline) {
+            val ctx = runCatching {
+                val at = currentAT.invoke(null) ?: return@runCatching null
+                at.callMethod("getSystemContext") as? Context
+            }.getOrNull()
+            if (ctx != null) return ctx
+            Thread.sleep(POLL_INTERVAL_MS)
+        }
+        return null
+    }
+
+    /** Block until sys.boot_completed=1 (shell handler registered at phase 600). */
+    private fun waitForBootCompleted() {
+        val sp = Class.forName("android.os.SystemProperties")
+        val get = sp.method("get", String::class.java, String::class.java)
+        val deadline = System.currentTimeMillis() + WAIT_DEADLINE_MS
+        while (System.currentTimeMillis() < deadline) {
+            val done = runCatching {
+                get.invoke(null, "sys.boot_completed", "0") as? String == "1"
+            }.getOrDefault(false)
+            if (done) return
+            Thread.sleep(POLL_INTERVAL_MS)
+        }
+        log("AppWhitelist: boot_completed never observed, proceeding anyway")
     }
 
     private fun updateWhitelist(context: Context) {
@@ -73,7 +114,6 @@ object AppWhitelist {
                 val allApps = apps.joinToString(":") { it.packageName }
                 if (allApps.isEmpty()) return@Thread
 
-                // ServiceManager.getService("window") (static)
                 val smClass = Class.forName("android.os.ServiceManager")
                 val windowBinder = smClass.method("getService", String::class.java)
                     .invoke(null, "window") as? IBinder
@@ -107,6 +147,21 @@ object AppWhitelist {
                 isUpdating = false
             }
         }.start()
+    }
+
+    private fun registerPackageReceiver(context: Context) {
+        runCatching {
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_PACKAGE_ADDED)
+                addAction(Intent.ACTION_PACKAGE_REMOVED)
+                addAction(Intent.ACTION_PACKAGE_REPLACED)
+                addDataScheme("package")
+            }
+            // Android 14+ requires an explicit export flag.
+            context.registerReceiver(
+                PackageChangeReceiver(context), filter, Context.RECEIVER_EXPORTED)
+            log("AppWhitelist: package receiver registered")
+        }.onFailure { log("AppWhitelist: registerReceiver failed", it) }
     }
 
     private class PackageChangeReceiver(private val ctx: Context) : BroadcastReceiver() {
