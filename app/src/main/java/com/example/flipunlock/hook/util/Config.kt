@@ -12,6 +12,7 @@ package com.example.flipunlock.hook.util
  *   setprop persist.flipunlock.display.aod false         # outer screen AOD
  *   setprop persist.flipunlock.display.cutout false      # remove cutout
  *   setprop persist.flipunlock.display.fullscreen false  # force app fullscreen (no compat letterbox)
+ *   setprop persist.flipunlock.app.continuity false      # app continuity (keep running app on fold)
  *   setprop persist.flipunlock.gesture.home false        # bottom gestures
  *   setprop persist.flipunlock.gesture.back false        # back gestures
  *   setprop persist.flipunlock.ui.lockscreen false       # lock screen layout
@@ -59,6 +60,11 @@ package com.example.flipunlock.hook.util
  *   can have the cutout removed yet still be letterboxed to a fixed aspect
  *   ratio. No dependency on any other toggle.
  *
+ * app.continuity ── INDEPENDENT ──
+ *   Keeps the running inner-screen app alive on the outer screen when folded
+ *   (forces InterceptActivityController.isKeepContinuityInFold gates). Works
+ *   at the activity/task level; no dependency on any other toggle.
+ *
  * ui.widget ── INDEPENDENT ──
  *   WatchOverlayHook operates in fliphome process only.
  *   No dependency on any other toggle.
@@ -82,6 +88,7 @@ object Config {
         "persist.flipunlock.display.aod",
         "persist.flipunlock.display.cutout",
         "persist.flipunlock.display.fullscreen",
+        "persist.flipunlock.app.continuity",
         "persist.flipunlock.gesture.home",
         "persist.flipunlock.gesture.back",
         "persist.flipunlock.ui.lockscreen",
@@ -101,6 +108,9 @@ object Config {
     val displayAod: Boolean get() = enabled && raw("persist.flipunlock.display.aod", true)
     val displayCutout: Boolean get() = enabled && raw("persist.flipunlock.display.cutout", true)
     val displayFullscreen: Boolean get() = enabled && raw("persist.flipunlock.display.fullscreen", true)
+
+    // App
+    val appContinuity: Boolean get() = enabled && raw("persist.flipunlock.app.continuity", true)
 
     // Gesture — keep together
     val gestureHome: Boolean get() = enabled && raw("persist.flipunlock.gesture.home", true)

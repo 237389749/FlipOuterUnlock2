@@ -3,6 +3,7 @@ package com.example.flipunlock
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.fliphome.WidgetRemove
 import com.example.flipunlock.hook.fliphome.WidgetTouchPassthrough
+import com.example.flipunlock.hook.system_server.AppContinuity
 import com.example.flipunlock.hook.system_server.AppFullscreen
 import com.example.flipunlock.hook.system_server.AppRestriction
 import com.example.flipunlock.hook.system_server.AppWhitelist
@@ -43,6 +44,7 @@ class Main : XposedModule() {
         AppWhitelist.hook(param)
         CutoutRemove.hook(param)
         AppFullscreen.hook(param)
+        AppContinuity.hook(param)
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
