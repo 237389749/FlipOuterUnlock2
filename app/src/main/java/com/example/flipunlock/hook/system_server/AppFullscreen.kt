@@ -33,6 +33,15 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  * Note: on the inner (normal) screen apps already resolve to fullscreen, so
  * forcing mode 0 there is a no-op — this only changes outer-screen behavior.
  *
+ * Defense (#4): compat mode 0 makes BoundsCompatController.canUseFixedAspectRatio()
+ * return false, which already skips the whole scale computation (mCurrentScale
+ * stays 1.0f). BUT canUseFixedAspectRatio() returns true FIRST if
+ * ActivityTaskManagerServiceStub.shouldApplyAspectRatio(ar) is true (a per-app
+ * fixed-aspect-ratio override), bypassing the compat-mode gate. To close that
+ * leak we also force ActivityTaskManagerServiceImpl.getGlobalScale(ActivityRecord)
+ * → 1.0f (matches MixFlipMod's NO_SCALE). getGlobalScale is only consumed inside
+ * the canUseFixedAspectRatio block, so on the inner screen this is a no-op too.
+ *
  * Toggle: persist.flipunlock.display.fullscreen (default true)
  * Process: system_server
  */
@@ -48,6 +57,7 @@ object AppFullscreen {
             hookFlipCompatModeByApp(param.classLoader)
             hookFlipCompatModeByActivity(param.classLoader)
             hookFullScreenValue(param.classLoader)
+            hookGlobalScale(param.classLoader)
         }
     }
 
@@ -91,5 +101,19 @@ object AppFullscreen {
             hook(method, replaceResult(0))
             log("AppFullscreen: getFullScreenValue → 0")
         }.onFailure { log("AppFullscreen: getFullScreenValue hook failed", it) }
+    }
+
+    // ── #4 ActivityTaskManagerServiceImpl.getGlobalScale(ActivityRecord) → 1.0f (defense) ──
+    private fun hookGlobalScale(classLoader: ClassLoader) {
+        runCatching {
+            val atmsImpl = classLoader.loadClass(
+                "com.android.server.wm.ActivityTaskManagerServiceImpl")
+            val activityRecordClass = classLoader.loadClass(
+                "com.android.server.wm.ActivityRecord")
+            val method = atmsImpl.method(
+                "getGlobalScale", activityRecordClass)
+            hook(method, replaceResult(1.0f))
+            log("AppFullscreen: getGlobalScale → 1.0f (no scale)")
+        }.onFailure { log("AppFullscreen: getGlobalScale hook failed", it) }
     }
 }
