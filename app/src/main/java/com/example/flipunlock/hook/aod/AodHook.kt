@@ -183,23 +183,66 @@ object AodHook : BaseHook() {
 
     /**
      * A non-null DisplayCutout with empty bounding rects.
-     * `DisplayCutout.NONE` exists on the runtime ROM (Android 15) but is only a public
-     * constant since API 34, so it may not resolve against our compileSdk — read it
-     * reflectively, falling back to the empty 4-rect constructor.
+     * Tries multiple strategies since the available constructors/fields vary by ROM:
+     *  1. Static field NONE (API 34+ public, may exist as hidden on earlier)
+     *  2. Public 7-param ctor (API 34+): (Insets, Rect, Rect, Rect, Rect, Bounds, Insets)
+     *  3. Internal 4-int ctor (older): (int, int, int, int)
+     *  4. Any declared ctor with all-null/zero args (last resort)
      */
     private fun emptyDisplayCutout(): android.view.DisplayCutout? {
+        val clz = android.view.DisplayCutout::class.java
+        // Strategy 1: static NONE field
         runCatching {
-            val f = android.view.DisplayCutout::class.java.getDeclaredField("NONE")
+            val f = clz.getDeclaredField("NONE")
             f.isAccessible = true
-            (f.get(null) as? android.view.DisplayCutout)?.let { return it }
+            (f.get(null) as? android.view.DisplayCutout)?.let {
+                log("AodHook: #5 got DisplayCutout.NONE field")
+                return it
+            }
         }
+        // Strategy 2: public 7-param ctor (Insets, Rect*4, Bounds, Insets) — pass nulls
         runCatching {
-            val ctor = android.view.DisplayCutout::class.java.getDeclaredConstructor(
+            val insetsClz = Class.forName("android.graphics.Insets")
+            val boundsClz = Class.forName("android.graphics.Rect\$Bounds")
+            val ctor = clz.getDeclaredConstructor(
+                insetsClz, android.graphics.Rect::class.java, android.graphics.Rect::class.java,
+                android.graphics.Rect::class.java, android.graphics.Rect::class.java,
+                boundsClz, insetsClz)
+            ctor.isAccessible = true
+            val r = android.graphics.Rect(0, 0, 0, 0)
+            return ctor.newInstance(null, r, r, r, r, null, null) as android.view.DisplayCutout
+        }
+        // Strategy 3: 4-int ctor
+        runCatching {
+            val ctor = clz.getDeclaredConstructor(
                 Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!,
                 Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)
             ctor.isAccessible = true
-            return ctor.newInstance(0, 0, 0, 0)
+            log("AodHook: #5 got DisplayCutout via 4-int ctor")
+            return ctor.newInstance(0, 0, 0, 0) as android.view.DisplayCutout
         }
+        // Strategy 4: enumerate all ctors, try first one with null/defaults
+        runCatching {
+            for (ctor in clz.declaredConstructors) {
+                runCatching {
+                    ctor.isAccessible = true
+                    val params = ctor.parameterTypes.map { p ->
+                        when {
+                            p == Int::class.javaPrimitiveType!! -> 0
+                            p == Boolean::class.javaPrimitiveType!! -> false
+                            p == Long::class.javaPrimitiveType!! -> 0L
+                            else -> null
+                        }
+                    }.toTypedArray()
+                    val obj = ctor.newInstance(*params)
+                    if (obj is android.view.DisplayCutout) {
+                        log("AodHook: #5 got DisplayCutout via ${ctor.parameterCount}-param ctor")
+                        return obj
+                    }
+                }
+            }
+        }
+        log("AodHook: #5 all DisplayCutout creation strategies failed; ctors=${clz.declaredConstructors.size}")
         return null
     }
 
