@@ -5,6 +5,7 @@ import com.example.flipunlock.hook.fliphome.WidgetRemove
 import com.example.flipunlock.hook.fliphome.WidgetTouchPassthrough
 import com.example.flipunlock.hook.system_server.AppRestriction
 import com.example.flipunlock.hook.system_server.AppWhitelist
+import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.log
 
@@ -37,6 +38,7 @@ class Main : XposedModule() {
         log("Main: onSystemServerStarting")
         AppRestriction.hook(param)
         AppWhitelist.hook(param)
+        CutoutRemove.hook(param)
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
