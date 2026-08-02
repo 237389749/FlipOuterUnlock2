@@ -26,6 +26,13 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  * ── App side (com.android.systemui / com.miui.aod) — force the AOD screen state ──
  *   The AOD classes (com.miui.aod.*) live in MIUIAod.apk under a SEPARATE classloader
  *   that onPackageReady's classLoader cannot see. Two layers:
+ *   Layer 0 (framework, visible from SystemUI — runs FIRST, fixes a hard crash):
+ *     #5 android.view.Display.getCutout() → DisplayCutout.NONE. The AOD flip path
+ *     DozeHost.dealWithFlipChange()→DisplayUtils.getCutoutPosition() dereferences
+ *     display.getCutout() with no null check; our CutoutRemove zeroes it → NPE →
+ *     SystemUI crash-loop at plugin connect (before any dream). The old project dodged
+ *     this only because its DeviceIdentityHook made isFlipDevice()→false and skipped the
+ *     flip path entirely. Returning the empty non-null NONE defuses the NPE.
  *   Layer 1 (framework DreamService, visible from SystemUI):
  *     #3 DreamService.setDozeScreenState(int): block OFF states {0,1,3} → force 4
  *        (AOD ON); let {2,4} pass. (v2.3 fix: state 4 = AOD ON must NOT be rewritten
@@ -116,7 +123,40 @@ object AodHook : BaseHook() {
     override fun setupHooks(param: PackageReadyParam) {
         if (!Config.displayAod) return
         log("AodHook(app): setupHooks pkg=${param.packageName}")
-        safeHook("AodHook") { hookDreamService(param.classLoader) }
+        safeHook("AodHook") {
+            hookDisplayGetCutout(param.classLoader)
+            hookDreamService(param.classLoader)
+        }
+    }
+
+    // ── #5 android.view.Display.getCutout() → DisplayCutout.NONE (NPE fix) ──
+    //
+    // Crash observed on device (SystemUI crash-loop, ~7s restart):
+    //   NullPointerException: DisplayCutout.getBoundingRectLeft() on a null object
+    //     at com.miui.aod.util.DisplayUtils.getCutoutPosition(DisplayUtils.java)
+    //     at com.miui.aod.DozeHost.dealWithFlipChange(DozeHost.java)   ← flip-only path
+    //     at com.miui.aod.DozeHost.create(DozeHost.java)
+    //
+    // DisplayUtils.getCutoutPosition() does `display.getCutout().getBoundingRectLeft()`
+    // with no null check. Our CutoutRemove zeroes the cutout, so Display.getCutout()
+    // returns null → NPE. This fires the moment the AOD plugin connects (DozeHost.create),
+    // i.e. BEFORE any dream starts — so the Layer-2 runtime hooks are too late to help.
+    //
+    // Why the OLD project never hit this: its DeviceIdentityHook forced Utils.isFlipDevice()
+    // → false, so DozeHost.dealWithFlipChange() (gated on isFlipDevice) was skipped entirely
+    // and getCutoutPosition was never called — i.e. the old AOD worked by pretending to be a
+    // non-flip ("inner-screen") device. We don't spoof identity, so we must defuse the NPE.
+    //
+    // Display.getCutout() is a PUBLIC framework method (R8-safe) visible from the SystemUI
+    // classloader, so hooking it here needs no plugin classloader and no timing tricks.
+    // Returning the non-null empty DisplayCutout.NONE makes getCutoutPosition() fall through
+    // to Direction.CAMERA_CUTOUT_ON_NONE, exactly as if there were simply no cutout.
+    private fun hookDisplayGetCutout(classLoader: ClassLoader) {
+        runCatching {
+            val method = android.view.Display::class.java.getMethod("getCutout")
+            hook(method, replaceResult(android.view.DisplayCutout.NONE))
+            log("AodHook: #5 Display.getCutout → DisplayCutout.NONE (AOD NPE fix)")
+        }.onFailure { log("AodHook: #5 Display.getCutout failed", it) }
     }
 
     // ── #3/#4 framework DreamService (visible from SystemUI) ──
