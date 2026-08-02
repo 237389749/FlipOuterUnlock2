@@ -1,6 +1,7 @@
 package com.example.flipunlock
 
 import com.example.flipunlock.hook.BaseHook
+import com.example.flipunlock.hook.aod.AodHook
 import com.example.flipunlock.hook.fliphome.WidgetRemove
 import com.example.flipunlock.hook.fliphome.WidgetTouchPassthrough
 import com.example.flipunlock.hook.system_server.AppContinuity
@@ -31,6 +32,8 @@ class Main : XposedModule() {
         // WidgetTouchPassthrough,      // FLAG_NOT_TOUCHABLE verified applied via dumpsys, yet touches are STILL
         //                              // intercepted → a second MIUI input mechanism reserves the region while the
         //                              // overlay window exists; flag-only passthrough is insufficient. Kept for reference.
+        // aod/ — always-on display on the outer screen (app side: DreamService + runtime DozeMachine)
+        AodHook,                        // force AOD screen state; framework side registered in onSystemServerStarting
     )
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
@@ -45,6 +48,7 @@ class Main : XposedModule() {
         CutoutRemove.hook(param)
         AppFullscreen.hook(param)
         AppContinuity.hook(param)
+        AodHook.hookFramework(param)
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
