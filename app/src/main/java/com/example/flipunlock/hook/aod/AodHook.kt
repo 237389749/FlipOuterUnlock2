@@ -153,10 +153,34 @@ object AodHook : BaseHook() {
     // to Direction.CAMERA_CUTOUT_ON_NONE, exactly as if there were simply no cutout.
     private fun hookDisplayGetCutout(classLoader: ClassLoader) {
         runCatching {
+            val emptyCutout = emptyDisplayCutout()
+                ?: run { log("AodHook: #5 no empty DisplayCutout available"); return }
             val method = android.view.Display::class.java.getMethod("getCutout")
-            hook(method, replaceResult(android.view.DisplayCutout.NONE))
-            log("AodHook: #5 Display.getCutout → DisplayCutout.NONE (AOD NPE fix)")
+            hook(method, replaceResult(emptyCutout))
+            log("AodHook: #5 Display.getCutout → empty DisplayCutout (AOD NPE fix)")
         }.onFailure { log("AodHook: #5 Display.getCutout failed", it) }
+    }
+
+    /**
+     * A non-null DisplayCutout with empty bounding rects.
+     * `DisplayCutout.NONE` exists on the runtime ROM (Android 15) but is only a public
+     * constant since API 34, so it may not resolve against our compileSdk — read it
+     * reflectively, falling back to the empty 4-rect constructor.
+     */
+    private fun emptyDisplayCutout(): android.view.DisplayCutout? {
+        runCatching {
+            val f = android.view.DisplayCutout::class.java.getDeclaredField("NONE")
+            f.isAccessible = true
+            (f.get(null) as? android.view.DisplayCutout)?.let { return it }
+        }
+        runCatching {
+            val ctor = android.view.DisplayCutout::class.java.getDeclaredConstructor(
+                Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)
+            ctor.isAccessible = true
+            return ctor.newInstance(0, 0, 0, 0)
+        }
+        return null
     }
 
     // ── #3/#4 framework DreamService (visible from SystemUI) ──
