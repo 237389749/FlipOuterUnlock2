@@ -56,7 +56,11 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  */
 object AodHook : BaseHook() {
 
-    override val targetPackages = listOf("com.android.systemui", "com.miui.aod")
+    // "android" is required because LSPosed v2.0.1 only fires onPackageReady("android")
+    // in the systemui process — onPackageReady("com.android.systemui") is never called
+    // despite the package being in scope. The process guard in setupHooks() ensures the
+    // app-side hooks only install in systemui / miui.aod, not system_server or other apps.
+    override val targetPackages = listOf("android", "com.android.systemui", "com.miui.aod")
 
     /** Runtime (Layer 2) hooks installed at most once per process. */
     @Volatile
@@ -122,12 +126,28 @@ object AodHook : BaseHook() {
 
     override fun setupHooks(param: PackageReadyParam) {
         if (!Config.displayAod) return
-        log("AodHook(app): setupHooks pkg=${param.packageName}")
+        // When pkg="android", only proceed if we're actually inside systemui / miui.aod.
+        // This avoids installing app-side hooks in system_server or unrelated app processes.
+        if (param.packageName == "android") {
+            val proc = currentProcessName()
+            if (proc != "com.android.systemui" && proc != "com.miui.aod") {
+                log("AodHook(app): skip, process=$proc")
+                return
+            }
+            log("AodHook(app): pkg=android but process=$proc — installing app hooks")
+        } else {
+            log("AodHook(app): setupHooks pkg=${param.packageName}")
+        }
         safeHook("AodHook") {
             hookDisplayGetCutout(param.classLoader)
             hookDreamService(param.classLoader)
         }
     }
+
+    private fun currentProcessName(): String? = runCatching {
+        val at = Class.forName("android.app.ActivityThread")
+        at.getMethod("currentProcessName").invoke(null) as? String
+    }.getOrNull()
 
     // ── #5 android.view.Display.getCutout() → DisplayCutout.NONE (NPE fix) ──
     //
