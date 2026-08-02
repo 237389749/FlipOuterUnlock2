@@ -1,6 +1,7 @@
 package com.example.flipunlock
 
 import com.example.flipunlock.hook.system_server.AppRestriction
+import com.example.flipunlock.hook.system_server.AppWhitelist
 import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.log
 
@@ -21,6 +22,7 @@ class Main : XposedModule() {
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
         log("Main: onSystemServerStarting")
         AppRestriction.hook(param)
+        AppWhitelist.hook(param)
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
