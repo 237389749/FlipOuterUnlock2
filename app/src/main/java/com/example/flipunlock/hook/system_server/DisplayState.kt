@@ -39,17 +39,11 @@ object DisplayState {
     /**
      * Are we running on the outer (cover) screen?
      * In system_server, Resources.getSystem() reflects the default display.
-     * Outer: max(w,h) < 2000. Inner: max(w,h) ~2508.
+     * Outer: max(w,h) = 1392. Inner: max(w,h) = 2508. Threshold: 2000.
      */
     private fun isOuterScreen(): Boolean {
         val dm = android.content.res.Resources.getSystem().displayMetrics
-        val w = dm.widthPixels
-        val h = dm.heightPixels
-        val density = dm.density
-        // Use ScreenUtils for precise identification
-        if (ScreenUtils.isOuterScreen(w, h, density)) return true
-        // Fallback: system_server may see rotated/swapped dimensions
-        return maxOf(w, h) < 2000 && density in ScreenUtils.DENSITY_MIN..ScreenUtils.DENSITY_MAX
+        return maxOf(dm.widthPixels, dm.heightPixels) < 2000
     }
 
     fun hook(param: SystemServerStartingParam) {
