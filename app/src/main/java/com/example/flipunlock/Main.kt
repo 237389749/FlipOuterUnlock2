@@ -1,7 +1,6 @@
 package com.example.flipunlock
 
 import com.example.flipunlock.hook.system_server.AppRestriction
-import com.example.flipunlock.hook.system_server.DisplayState
 import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.log
 
@@ -21,7 +20,6 @@ class Main : XposedModule() {
 
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
         log("Main: onSystemServerStarting")
-        DisplayState.hook(param)
         AppRestriction.hook(param)
     }
 
