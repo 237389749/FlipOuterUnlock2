@@ -11,6 +11,7 @@ package com.example.flipunlock.hook.util
  *   setprop persist.flipunlock.display.dual false        # dual display
  *   setprop persist.flipunlock.display.aod false         # outer screen AOD
  *   setprop persist.flipunlock.display.cutout false      # remove cutout
+ *   setprop persist.flipunlock.display.fullscreen false  # force app fullscreen (no compat letterbox)
  *   setprop persist.flipunlock.gesture.home false        # bottom gestures
  *   setprop persist.flipunlock.gesture.back false        # back gestures
  *   setprop persist.flipunlock.ui.lockscreen false       # lock screen layout
@@ -52,6 +53,12 @@ package com.example.flipunlock.hook.util
  *   Cutout/letterbox hooks operate at WindowManager/framework level.
  *   No dependency on any other toggle.
  *
+ * display.fullscreen ── INDEPENDENT ──
+ *   Disables MIUI flip size-compat letterbox (MIUI_SIZE_COMPAT_MODE) so apps
+ *   fill the whole outer screen. Separate mechanism from the cutout — an app
+ *   can have the cutout removed yet still be letterboxed to a fixed aspect
+ *   ratio. No dependency on any other toggle.
+ *
  * ui.widget ── INDEPENDENT ──
  *   WatchOverlayHook operates in fliphome process only.
  *   No dependency on any other toggle.
@@ -74,6 +81,7 @@ object Config {
         "persist.flipunlock.display.dual",
         "persist.flipunlock.display.aod",
         "persist.flipunlock.display.cutout",
+        "persist.flipunlock.display.fullscreen",
         "persist.flipunlock.gesture.home",
         "persist.flipunlock.gesture.back",
         "persist.flipunlock.ui.lockscreen",
@@ -92,6 +100,7 @@ object Config {
     val displayDual: Boolean get() = enabled && raw("persist.flipunlock.display.dual", true)
     val displayAod: Boolean get() = enabled && raw("persist.flipunlock.display.aod", true)
     val displayCutout: Boolean get() = enabled && raw("persist.flipunlock.display.cutout", true)
+    val displayFullscreen: Boolean get() = enabled && raw("persist.flipunlock.display.fullscreen", true)
 
     // Gesture — keep together
     val gestureHome: Boolean get() = enabled && raw("persist.flipunlock.gesture.home", true)
