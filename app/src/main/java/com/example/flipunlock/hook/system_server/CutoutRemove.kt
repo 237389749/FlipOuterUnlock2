@@ -46,6 +46,16 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  * apps read the cutout from the display info produced here. Add them only
  * if some app caches a stale cutout or queries a MIUI-specific source.
  *
+ * Hook #3 (WindowLayoutStubImpl.getLayoutInDisplayCutoutMode → ALWAYS): the
+ *   MIUI gate WMS's computeFrames() consults to decide whether to clip a
+ *   window's parent frame by the cutout-safe area. With an empty cutout the
+ *   clip is a no-op, but forcing mode=3 (LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS)
+ *   guarantees computeFrames() skips ALL cutout clipping regardless of a
+ *   window's own mode (defense-in-depth) and fixes centered content (e.g.
+ *   toasts) that mode=0 would shift. Native MIUI only upgrades mode 1→3 when
+ *   folded; we force 3 for every window. The class is in miui-framework.jar
+ *   (boot classpath), so hooking it in system_server covers all windows.
+ *
  * Toggle: persist.flipunlock.display.cutout (default true)
  * Process: system_server
  */
@@ -60,6 +70,7 @@ object CutoutRemove {
         safeHook("CutoutRemove") {
             hookCutoutParser(param.classLoader)
             clearDisplayInfoCutout(param.classLoader)
+            forceCutoutModeAlways(param.classLoader)
         }
     }
 
@@ -100,5 +111,19 @@ object CutoutRemove {
             })
             log("CutoutRemove: DisplayContent.getDisplayInfo → NO_CUTOUT")
         }.onFailure { log("CutoutRemove: getDisplayInfo hook failed", it) }
+    }
+
+    // ── #3 WindowLayoutStubImpl.getLayoutInDisplayCutoutMode() → ALWAYS (3) ──
+    //    MIUI gate for computeFrames() cutout clipping; 3 = lay out into the
+    //    cutout area unconditionally (fixes centered content + defense-in-depth).
+    private fun forceCutoutModeAlways(classLoader: ClassLoader) {
+        runCatching {
+            val cls = classLoader.loadClass("android.view.WindowLayoutStubImpl")
+            val method = cls.method(
+                "getLayoutInDisplayCutoutMode",
+                android.view.WindowManager.LayoutParams::class.java)
+            hook(method, replaceResult(3))  // LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            log("CutoutRemove: getLayoutInDisplayCutoutMode → ALWAYS (3)")
+        }.onFailure { log("CutoutRemove: getLayoutInDisplayCutoutMode hook failed", it) }
     }
 }
