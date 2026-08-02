@@ -75,9 +75,11 @@ object DisplayState {
 
             hook(method) { chain ->
                 if (isOuterScreen()) {
-                    chain.args[0] = closedState
+                    // getArgs() is immutable — pass forced state via proceed(Object[])
+                    chain.proceed(arrayOf<Any?>(closedState))
+                } else {
+                    chain.proceed()
                 }
-                chain.proceed()
             }
             log("DisplayState: §1 setDeviceStateLocked → CLOSED")
         }.onFailure { log("DisplayState: §1 failed", it) }
@@ -117,9 +119,12 @@ object DisplayState {
 
             hook(method) { chain ->
                 if (isOuterScreen()) {
-                    chain.args[0] = 0  // force deviceState=0 (CLOSED)
+                    // getArgs() is immutable — force deviceState=0 (CLOSED),
+                    // keep the rotation argument unchanged
+                    chain.proceed(arrayOf<Any?>(0, chain.args[1]))
+                } else {
+                    chain.proceed()
                 }
-                chain.proceed()
             }
             log("DisplayState: §3 getDisplayInfoForStateLocked → state=0")
         }.onFailure { log("DisplayState: §3 failed", it) }

@@ -27,7 +27,7 @@ class Main : XposedModule() {
     private val packageHooks = listOf<BaseHook>(
         // fliphome/ — widget overlay
         WidgetTouchPassthrough,         // widget window touch passthrough
-        WidgetRemove,                   // widget overlay complete removal
+        // WidgetRemove,                // widget overlay complete removal — disabled to test touch passthrough
     )
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
