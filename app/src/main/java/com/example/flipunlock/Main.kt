@@ -26,8 +26,10 @@ class Main : XposedModule() {
     // ──────────────────────────────────────────────────────────────────
     private val packageHooks = listOf<BaseHook>(
         // fliphome/ — widget overlay
-        WidgetTouchPassthrough,         // widget window touch passthrough
-        // WidgetRemove,                // widget overlay complete removal — disabled to test touch passthrough
+        WidgetRemove,                   // widget overlay complete removal (refreshWindow ADD→REMOVE) — confirmed working
+        // WidgetTouchPassthrough,      // FLAG_NOT_TOUCHABLE verified applied via dumpsys, yet touches are STILL
+        //                              // intercepted → a second MIUI input mechanism reserves the region while the
+        //                              // overlay window exists; flag-only passthrough is insufficient. Kept for reference.
     )
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
