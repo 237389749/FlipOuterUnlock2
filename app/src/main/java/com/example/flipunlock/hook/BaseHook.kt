@@ -5,6 +5,7 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 abstract class BaseHook {
     abstract val targetPackages: List<String>
+    open val excludedPackages: List<String> = emptyList()
 
     open fun hook(param: PackageReadyParam) {
         safeHook(javaClass.simpleName) {
