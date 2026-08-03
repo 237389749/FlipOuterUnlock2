@@ -70,12 +70,40 @@ object CutoutRemove {
         }.onFailure { log("CutoutRemove: Parser.parse hook failed", it) }
     }
 
-    // ── #2 DisplayCutout bounding rect methods → empty Rect (camera) ──
-    //    Prevents NPE when camera calls getBoundingRectRight/Left() etc.
-    //    Returns Rect(0,0,0,0) which isEmpty()=true → camera sees "no cutout".
+    // ── #2 DisplayCutout: hook constructor + bounding rect methods (camera) ──
+    //    The camera may access internal Rect fields directly (not through getters).
+    //    Hook constructor to ensure all internal Rect fields are empty Rects, not null.
     private fun hookBoundingRects(classLoader: ClassLoader) {
         val dcClass = classLoader.loadClass("android.view.DisplayCutout")
         val emptyRect = Rect(0, 0, 0, 0)
+        
+        // Hook all DisplayCutout constructors to initialize internal Rect fields
+        runCatching {
+            val constructors = dcClass.declaredConstructors
+            for (ctor in constructors) {
+                hook(ctor, after { chain, result ->
+                    val dc = chain.thisObject
+                    // Set all internal Rect fields to empty Rect if they're null
+                    val rectFields = listOf(
+                        "mBoundingRectLeft", "mBoundingRectRight",
+                        "mBoundingRectTop", "mBoundingRectBottom"
+                    )
+                    for (fieldName in rectFields) {
+                        runCatching {
+                            val field = dcClass.getDeclaredField(fieldName)
+                            field.isAccessible = true
+                            if (field.get(dc) == null) {
+                                field.set(dc, emptyRect)
+                            }
+                        }
+                    }
+                    result
+                })
+            }
+            log("CutoutRemove: DisplayCutout constructors hooked (${constructors.size} found)")
+        }.onFailure { log("CutoutRemove: DisplayCutout constructor hook failed", it) }
+        
+        // Also hook getter methods as defense-in-depth
         val methods = listOf(
             "getBoundingRectLeft",
             "getBoundingRectRight",
