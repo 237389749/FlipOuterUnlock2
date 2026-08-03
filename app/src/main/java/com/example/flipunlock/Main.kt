@@ -30,12 +30,12 @@ class Main : XposedModule() {
     private val packageHooks = listOf<BaseHook>(
         // fliphome/ — widget overlay
         WidgetRemove,                   // widget overlay complete removal (refreshWindow ADD→REMOVE) — confirmed working
-        RecentsCacheFix,                // clear RecentsTaskLoadPlan cache before entering overview so all tasks are loaded fresh
+        // RecentsCacheFix,              // TODO: hook installed but effect not verified — needs further debugging
         // WidgetTouchPassthrough,      // FLAG_NOT_TOUCHABLE verified applied via dumpsys, yet touches are STILL
         //                              // intercepted → a second MIUI input mechanism reserves the region while the
         //                              // overlay window exists; flag-only passthrough is insufficient. Kept for reference.
         // aod/ — always-on display on the outer screen (app side: DreamService + runtime DozeMachine)
-        AodHook,                        // force AOD screen state; framework side registered in onSystemServerStarting
+        // AodHook,                     // temporarily disabled for comparison testing
     )
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
@@ -50,7 +50,7 @@ class Main : XposedModule() {
         CutoutRemove.hook(param)
         AppFullscreen.hook(param)
         AppContinuity.hook(param)
-        AodHook.hookFramework(param)
+        // AodHook.hookFramework(param) // temporarily disabled for comparison testing
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
