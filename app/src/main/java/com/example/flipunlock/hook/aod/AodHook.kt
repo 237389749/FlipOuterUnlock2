@@ -176,8 +176,18 @@ object AodHook : BaseHook() {
             val emptyCutout = emptyDisplayCutout()
                 ?: run { log("AodHook: #5 no empty DisplayCutout available"); return }
             val method = android.view.Display::class.java.getMethod("getCutout")
-            hook(method, replaceResult(emptyCutout))
-            log("AodHook: #5 Display.getCutout → empty DisplayCutout (AOD NPE fix)")
+            hook(method) { chain ->
+                // Only return empty cutout when called from AOD code path.
+                // A global replace breaks status bar layout, notification layout,
+                // and camera app (all rely on real cutout data).
+                val stack = android.util.Log.getStackTraceString(Throwable())
+                if (stack.contains("com.miui.aod")) {
+                    emptyCutout
+                } else {
+                    chain.proceed()
+                }
+            }
+            log("AodHook: #5 Display.getCutout → empty only in AOD call path (NPE fix)")
         }.onFailure { log("AodHook: #5 Display.getCutout failed", it) }
     }
 

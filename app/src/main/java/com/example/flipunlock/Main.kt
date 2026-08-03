@@ -35,7 +35,7 @@ class Main : XposedModule() {
         //                              // intercepted → a second MIUI input mechanism reserves the region while the
         //                              // overlay window exists; flag-only passthrough is insufficient. Kept for reference.
         // aod/ — always-on display on the outer screen (app side: DreamService + runtime DozeMachine)
-        // AodHook,                     // temporarily disabled for comparison testing
+        AodHook,                        // #5 cutout hook now scoped to AOD call path only
     )
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
@@ -50,7 +50,7 @@ class Main : XposedModule() {
         CutoutRemove.hook(param)
         AppFullscreen.hook(param)
         AppContinuity.hook(param)
-        // AodHook.hookFramework(param) // temporarily disabled for comparison testing
+        AodHook.hookFramework(param)    // #5 cutout hook now scoped to AOD call path only
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
