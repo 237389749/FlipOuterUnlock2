@@ -73,7 +73,7 @@ object FlashlightHook : BaseHook() {
 
             hook(handleClick) { chain ->
                 val tile = chain.thisObject
-                val controller = tile.getField("flashlightController")
+                val controller = tile.getField("flashlightController")!!
 
                 // Preserve forceOff/batteryOff handling (shows toast)
                 val forceOff = controller.getField("mForceOff") as Boolean
