@@ -74,9 +74,7 @@ object CutoutRemove {
         }
     }
 
-    // ── #1 CutoutSpecification.Parser.parse() → zero the OUTER display spec only ──
-    //    Filter by SVG path to only zero the outer (cover) screen cutout.
-    //    The inner display cutout (camera punch-hole) must remain intact for camera app.
+    // ── #1 CutoutSpecification.Parser.parse() → zero the parsed spec ──
     private fun hookCutoutParser(classLoader: ClassLoader) {
         runCatching {
             val parserClass = classLoader.loadClass(
@@ -84,24 +82,19 @@ object CutoutRemove {
             val parseMethod = parserClass.method("parse", String::class.java)
             hook(parseMethod, after { chain, result ->
                 val spec = result ?: return@after result
-                val originalSpec = chain.args[0] as? String ?: return@after result
-                if (originalSpec.contains("M 604,664") ||
-                    originalSpec.contains("@bind_right_cutout")) {
-                    spec.setField("mLeftBound", Rect(0, 0, 0, 0))
-                    spec.setField("mTopBound", Rect(0, 0, 0, 0))
-                    spec.setField("mRightBound", Rect(0, 0, 0, 0))
-                    spec.setField("mBottomBound", Rect(0, 0, 0, 0))
-                    spec.setField("mInsets", Insets.of(0, 0, 0, 0))
-                    spec.setField("mPath", Path())
-                }
+                spec.setField("mLeftBound", Rect(0, 0, 0, 0))
+                spec.setField("mTopBound", Rect(0, 0, 0, 0))
+                spec.setField("mRightBound", Rect(0, 0, 0, 0))
+                spec.setField("mBottomBound", Rect(0, 0, 0, 0))
+                spec.setField("mInsets", Insets.of(0, 0, 0, 0))
+                spec.setField("mPath", Path())
                 result
             })
-            log("CutoutRemove: Parser.parse → zero outer cutout spec only")
+            log("CutoutRemove: Parser.parse → zero cutout spec")
         }.onFailure { log("CutoutRemove: Parser.parse hook failed", it) }
     }
 
-    // ── #2 DisplayContent.getDisplayInfo() → NO_CUTOUT for outer display only ──
-    //    displayId 0 = inner (default) display, keep its cutout for camera.
+    // ── #2 DisplayContent.getDisplayInfo() → NO_CUTOUT on every read ──
     private fun clearDisplayInfoCutout(classLoader: ClassLoader) {
         runCatching {
             val noCutout = classLoader.loadClass("android.view.DisplayCutout")
@@ -113,16 +106,10 @@ object CutoutRemove {
             val method = dcClass.getDeclaredMethod("getDisplayInfo")
             method.isAccessible = true
             hook(method, before { chain ->
-                val displayId = runCatching {
-                    chain.thisObject.javaClass.getMethod("getDisplayId")
-                        .invoke(chain.thisObject) as? Int
-                }.getOrNull() ?: -1
-                if (displayId != 0) {
-                    chain.thisObject.getField("mDisplayInfo")
-                        ?.setField("displayCutout", noCutout)
-                }
+                chain.thisObject.getField("mDisplayInfo")
+                    ?.setField("displayCutout", noCutout)
             })
-            log("CutoutRemove: DisplayContent.getDisplayInfo → NO_CUTOUT for outer display only")
+            log("CutoutRemove: DisplayContent.getDisplayInfo → NO_CUTOUT")
         }.onFailure { log("CutoutRemove: getDisplayInfo hook failed", it) }
     }
 
