@@ -74,10 +74,7 @@ object CutoutRemove {
         }
     }
 
-    // ── #1 CutoutSpecification.Parser.parse() → zero the OUTER display spec only ──
-    //    The old project filtered by SVG path ("M 604,664" / "@bind_right_cutout")
-    //    to only zero the outer screen cutout. Zeroing ALL specs breaks the camera
-    //    app which needs the inner display cutout to lay out around the punch-hole.
+    // ── #1 CutoutSpecification.Parser.parse() → zero the parsed spec ──
     private fun hookCutoutParser(classLoader: ClassLoader) {
         runCatching {
             val parserClass = classLoader.loadClass(
@@ -85,30 +82,19 @@ object CutoutRemove {
             val parseMethod = parserClass.method("parse", String::class.java)
             hook(parseMethod, after { chain, result ->
                 val spec = result ?: return@after result
-                val originalSpec = chain.args[0] as? String ?: return@after result
-                // Only zero the outer (cover) display cutout spec.
-                // The inner display cutout (camera punch-hole) must remain intact.
-                if (originalSpec.contains("M 604,664") ||
-                    originalSpec.contains("@bind_right_cutout")) {
-                    spec.setField("mLeftBound", Rect(0, 0, 0, 0))
-                    spec.setField("mTopBound", Rect(0, 0, 0, 0))
-                    spec.setField("mRightBound", Rect(0, 0, 0, 0))
-                    spec.setField("mBottomBound", Rect(0, 0, 0, 0))
-                    spec.setField("mInsets", Insets.of(0, 0, 0, 0))
-                    spec.setField("mPath", Path())
-                    log("CutoutRemove: zeroed outer display cutout spec")
-                }
+                spec.setField("mLeftBound", Rect(0, 0, 0, 0))
+                spec.setField("mTopBound", Rect(0, 0, 0, 0))
+                spec.setField("mRightBound", Rect(0, 0, 0, 0))
+                spec.setField("mBottomBound", Rect(0, 0, 0, 0))
+                spec.setField("mInsets", Insets.of(0, 0, 0, 0))
+                spec.setField("mPath", Path())
                 result
             })
-            log("CutoutRemove: Parser.parse → zero outer cutout spec only")
+            log("CutoutRemove: Parser.parse → zero cutout spec")
         }.onFailure { log("CutoutRemove: Parser.parse hook failed", it) }
     }
 
-    // ── #2 DisplayContent.getDisplayInfo() → NO_CUTOUT for OUTER display only ──
-    //    The boot display's cutout can be created & cached before LSPosed loads,
-    //    so hooking creation alone is not enough — this clears the existing cached
-    //    value. We restrict to the outer (secondary) display to avoid breaking the
-    //    inner display's cutout (needed by camera app for punch-hole layout).
+    // ── #2 DisplayContent.getDisplayInfo() → NO_CUTOUT on every read ──
     private fun clearDisplayInfoCutout(classLoader: ClassLoader) {
         runCatching {
             val noCutout = classLoader.loadClass("android.view.DisplayCutout")
@@ -120,18 +106,10 @@ object CutoutRemove {
             val method = dcClass.getDeclaredMethod("getDisplayInfo")
             method.isAccessible = true
             hook(method, before { chain ->
-                // Only clear cutout for the outer (secondary) display (displayId > 0).
-                // displayId 0 is the default/inner display — its cutout must stay intact.
-                val displayId = runCatching {
-                    chain.thisObject.javaClass.getMethod("getDisplayId")
-                        .invoke(chain.thisObject) as? Int
-                }.getOrNull() ?: -1
-                if (displayId != 0) {
-                    chain.thisObject.getField("mDisplayInfo")
-                        ?.setField("displayCutout", noCutout)
-                }
+                chain.thisObject.getField("mDisplayInfo")
+                    ?.setField("displayCutout", noCutout)
             })
-            log("CutoutRemove: DisplayContent.getDisplayInfo → NO_CUTOUT for outer display only")
+            log("CutoutRemove: DisplayContent.getDisplayInfo → NO_CUTOUT")
         }.onFailure { log("CutoutRemove: getDisplayInfo hook failed", it) }
     }
 
