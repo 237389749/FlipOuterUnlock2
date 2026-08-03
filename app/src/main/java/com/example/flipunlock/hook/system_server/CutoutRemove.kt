@@ -11,15 +11,16 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  * Remove the outer-screen display cutout so windows lay out across the full
  * 1208px width instead of being clipped to the cutout-safe area (~810px).
  *
- * Approach: Parser.parse() in system_server zeros mInsets (fullscreen layout)
- * and mPath (hide cutout display), but PRESERVES bounds (mLeftBound etc.)
- * so camera can still access non-null bounding rects.
+ * Approach: Parser.parse() uses string filtering to match outer screen spec only
+ * ("M 604,664" or "@bind_right_cutout" from config_secondaryBuiltInDisplayCutout).
+ * For outer screen spec: zero mInsets (fullscreen layout) + mPath (hide cutout),
+ * but PRESERVE bounds (mLeftBound etc.) so camera can access non-null bounding rects.
  *
  * Camera NPE root cause: zeroed bounds → DisplayCutout internal Rect fields
  * become null → camera code accessing Rect.right on null → NPE.
- * Fix: preserve bounds in Parser.parse, only zero mInsets + mPath.
+ * Fix: preserve bounds, only zero mInsets + mPath for outer screen spec.
  *
- * Hook #1 (Parser.parse, system_server): zero mInsets + mPath, preserve bounds.
+ * Hook #1 (Parser.parse, system_server): string filter → zero mInsets + mPath, preserve bounds.
  * Hook #2 (DisplayCutout.getBoundingRect*, camera): return empty Rect (defense).
  * Hook #3 (getLayoutInDisplayCutoutMode → ALWAYS): defense-in-depth.
  *
@@ -49,8 +50,9 @@ object CutoutRemove {
         }
     }
 
-    // ── #1 CutoutSpecification.Parser.parse() → zero mInsets + mPath only (system_server) ──
-    //    Keep bounds (mLeftBound etc.) intact — camera needs non-null bounding rects.
+    // ── #1 CutoutSpecification.Parser.parse() → zero mInsets + mPath for OUTER screen only ──
+    //    Use string filtering to match outer screen spec only.
+    //    Keep bounds intact for camera NPE prevention.
     private fun hookCutoutParser(classLoader: ClassLoader) {
         runCatching {
             val parserClass = classLoader.loadClass(
@@ -58,13 +60,18 @@ object CutoutRemove {
             val parseMethod = parserClass.method("parse", String::class.java)
             hook(parseMethod, after { chain, result ->
                 val spec = result ?: return@after result
-                // Only zero mInsets (fullscreen layout) and mPath (hide cutout display)
-                // Keep bounds intact for camera NPE prevention
-                spec.setField("mInsets", Insets.of(0, 0, 0, 0))
-                spec.setField("mPath", Path())
+                val specString = chain.args[0] as? String ?: return@after result
+                // Only match outer screen spec (from config_secondaryBuiltInDisplayCutout)
+                if (specString.contains("M 604,664") || specString.contains("@bind_right_cutout")) {
+                    // Only zero mInsets (fullscreen layout) and mPath (hide cutout display)
+                    // Keep bounds intact for camera NPE prevention
+                    spec.setField("mInsets", Insets.of(0, 0, 0, 0))
+                    spec.setField("mPath", Path())
+                    log("CutoutRemove: Parser.parse → outer screen spec detected, zeroed mInsets + mPath")
+                }
                 result
             })
-            log("CutoutRemove: Parser.parse → zero mInsets + mPath (bounds preserved)")
+            log("CutoutRemove: Parser.parse → string filtering enabled (outer screen only)")
         }.onFailure { log("CutoutRemove: Parser.parse hook failed", it) }
     }
 
