@@ -29,9 +29,9 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
            │    clips every window's parent frame
  *           └→ SystemUI HideDisplayCutoutOrganizer → SurfaceFlinger display crop
  *
- * Hook #1 (Parser.parse): zero bounds/insets on the outer display spec only
- *   (filtered by SVG path "M 604,664" / "@bind_right_cutout"). Non-outer specs
- *   are left intact so camera/scan apps can still read cutout info.
+ * Hook #1 (Parser.parse): zero ALL bounds/insets/path on every parsed spec.
+ *   Camera (com.android.camera) is excluded from LSPosed scope so it reads
+ *   the real cutout before this hook zeroes it.
  *
  * Zeroing the cutout at the source cascades everywhere — no per-app API
  * hooks (Display.getCutout / WindowInsets.getDisplayCutout) are needed:
@@ -65,9 +65,8 @@ object CutoutRemove {
         }
     }
 
-    // ── #1 CutoutSpecification.Parser.parse() → zero the OUTER display spec only ──
-    //    Filter by SVG path to only zero the outer (cover) screen cutout.
-    //    Zeroing ALL specs breaks camera / scan apps that need cutout info.
+    // ── #1 CutoutSpecification.Parser.parse() → zero ALL specs ──
+    //    Camera (com.android.camera) excluded from LSPosed scope.
     private fun hookCutoutParser(classLoader: ClassLoader) {
         runCatching {
             val parserClass = classLoader.loadClass(
@@ -75,18 +74,15 @@ object CutoutRemove {
             val parseMethod = parserClass.method("parse", String::class.java)
             hook(parseMethod, after { chain, result ->
                 val spec = result ?: return@after result
-                val originalSpec = chain.args[0] as? String ?: return@after result
-                if (originalSpec.contains("M 604,664") ||
-                    originalSpec.contains("@bind_right_cutout")) {
-                    // Zero insets → no window clipping → fullscreen
-                    spec.setField("mInsets", Insets.of(0, 0, 0, 0))
-                    // Clear path → no visible cutout area
-                    spec.setField("mPath", Path())
-                    // Keep bounds intact → getBoundingRectRight/Left() return non-null Rect for camera
-                }
+                spec.setField("mLeftBound", Rect(0, 0, 0, 0))
+                spec.setField("mTopBound", Rect(0, 0, 0, 0))
+                spec.setField("mRightBound", Rect(0, 0, 0, 0))
+                spec.setField("mBottomBound", Rect(0, 0, 0, 0))
+                spec.setField("mInsets", Insets.of(0, 0, 0, 0))
+                spec.setField("mPath", Path())
                 result
             })
-            log("CutoutRemove: Parser.parse → zero outer display cutout bounds only")
+            log("CutoutRemove: Parser.parse → zero ALL cutout specs")
         }.onFailure { log("CutoutRemove: Parser.parse hook failed", it) }
     }
 
