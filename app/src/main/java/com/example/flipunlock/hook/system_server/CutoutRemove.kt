@@ -11,17 +11,16 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  * Remove the outer-screen display cutout so windows lay out across the full
  * 1208px width instead of being clipped to the cutout-safe area (~810px).
  *
- * Approach: Parser.parse() in system_server zeros ALL cutout specs for fullscreen.
- * In the camera process, hook DisplayCutout's bounding rect methods to return
- * empty Rect(0,0,0,0) instead of null — camera sees isEmpty()=true → no cutout
- * → no NPE. This avoids the need to pass real cutout data between processes.
+ * Approach: Parser.parse() in system_server zeros mInsets (fullscreen layout)
+ * and mPath (hide cutout display), but PRESERVES bounds (mLeftBound etc.)
+ * so camera can still access non-null bounding rects.
  *
- * Camera NPE root cause: zeroed bounds → getBoundingRects() empty →
- * getBoundingRectRight/Left() return null → CamLayoutManagerImpl NPE.
- * Fix: hook those methods to return empty Rect instead of null.
+ * Camera NPE root cause: zeroed bounds → DisplayCutout internal Rect fields
+ * become null → camera code accessing Rect.right on null → NPE.
+ * Fix: preserve bounds in Parser.parse, only zero mInsets + mPath.
  *
- * Hook #1 (Parser.parse, system_server): zero ALL specs.
- * Hook #2 (DisplayCutout.getBoundingRect*, camera): return empty Rect.
+ * Hook #1 (Parser.parse, system_server): zero mInsets + mPath, preserve bounds.
+ * Hook #2 (DisplayCutout.getBoundingRect*, camera): return empty Rect (defense).
  * Hook #3 (getLayoutInDisplayCutoutMode → ALWAYS): defense-in-depth.
  *
  * Toggle: persist.flipunlock.display.cutout (default true)
@@ -50,7 +49,8 @@ object CutoutRemove {
         }
     }
 
-    // ── #1 CutoutSpecification.Parser.parse() → zero ALL specs (system_server) ──
+    // ── #1 CutoutSpecification.Parser.parse() → zero mInsets + mPath only (system_server) ──
+    //    Keep bounds (mLeftBound etc.) intact — camera needs non-null bounding rects.
     private fun hookCutoutParser(classLoader: ClassLoader) {
         runCatching {
             val parserClass = classLoader.loadClass(
@@ -58,52 +58,24 @@ object CutoutRemove {
             val parseMethod = parserClass.method("parse", String::class.java)
             hook(parseMethod, after { chain, result ->
                 val spec = result ?: return@after result
-                spec.setField("mLeftBound", Rect(0, 0, 0, 0))
-                spec.setField("mTopBound", Rect(0, 0, 0, 0))
-                spec.setField("mRightBound", Rect(0, 0, 0, 0))
-                spec.setField("mBottomBound", Rect(0, 0, 0, 0))
+                // Only zero mInsets (fullscreen layout) and mPath (hide cutout display)
+                // Keep bounds intact for camera NPE prevention
                 spec.setField("mInsets", Insets.of(0, 0, 0, 0))
                 spec.setField("mPath", Path())
                 result
             })
-            log("CutoutRemove: Parser.parse → zero ALL cutout specs")
+            log("CutoutRemove: Parser.parse → zero mInsets + mPath (bounds preserved)")
         }.onFailure { log("CutoutRemove: Parser.parse hook failed", it) }
     }
 
-    // ── #2 DisplayCutout: hook constructor + bounding rect methods (camera) ──
-    //    The camera may access internal Rect fields directly (not through getters).
-    //    Hook constructor to ensure all internal Rect fields are empty Rects, not null.
+    // ── #2 DisplayCutout getter methods → empty Rect (camera, defense-in-depth) ──
+    //    Bounds are preserved in Parser.parse, so camera should work.
+    //    These hooks are backup in case camera uses different code paths.
     private fun hookBoundingRects(classLoader: ClassLoader) {
         val dcClass = classLoader.loadClass("android.view.DisplayCutout")
         val emptyRect = Rect(0, 0, 0, 0)
         
-        // Hook all DisplayCutout constructors to initialize internal Rect fields
-        runCatching {
-            val constructors = dcClass.declaredConstructors
-            for (ctor in constructors) {
-                hook(ctor, after { chain, result ->
-                    val dc = chain.thisObject
-                    // Set all internal Rect fields to empty Rect if they're null
-                    val rectFields = listOf(
-                        "mBoundingRectLeft", "mBoundingRectRight",
-                        "mBoundingRectTop", "mBoundingRectBottom"
-                    )
-                    for (fieldName in rectFields) {
-                        runCatching {
-                            val field = dcClass.getDeclaredField(fieldName)
-                            field.isAccessible = true
-                            if (field.get(dc) == null) {
-                                field.set(dc, emptyRect)
-                            }
-                        }
-                    }
-                    result
-                })
-            }
-            log("CutoutRemove: DisplayCutout constructors hooked (${constructors.size} found)")
-        }.onFailure { log("CutoutRemove: DisplayCutout constructor hook failed", it) }
-        
-        // Also hook getter methods as defense-in-depth
+        // Hook getter methods as defense-in-depth
         val methods = listOf(
             "getBoundingRectLeft",
             "getBoundingRectRight",
