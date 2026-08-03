@@ -1,5 +1,6 @@
 package com.example.flipunlock.hook.system_server
 
+import android.graphics.Insets
 import android.graphics.Rect
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
@@ -27,17 +28,9 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
            │    clips every window's parent frame
  *           └→ SystemUI HideDisplayCutoutOrganizer → SurfaceFlinger display crop
  *
- * Hook #1 (Parser.parse): zero every bound / inset / path on the parsed
- *   spec. Catches every cutout parsed after onSystemServerStarting (display
- *   bring-up happens later), so the system never builds a real cutout.
- *
- * Hook #2 (DisplayContent.getDisplayInfo): force mDisplayInfo.displayCutout
- *   to NO_CUTOUT on every read. The boot display's cutout can be created &
- *   cached before LSPosed loads, so hooking creation alone is not enough —
- *   this clears the existing cached value and keeps it cleared. Because it
- *   mutates the mDisplayInfo field itself, everything that later reads the
- *   display info (InsetsState population, app DisplayInfo parcels, SystemUI)
- *   sees NO_CUTOUT.
+ * Hook #1 (Parser.parse): zero bounds/insets on the outer display spec only
+ *   (filtered by SVG path "M 604,664" / "@bind_right_cutout"). Non-outer specs
+ *   are left intact so camera/scan apps can still read cutout info.
  *
  * Zeroing the cutout at the source cascades everywhere — no per-app API
  * hooks (Display.getCutout / WindowInsets.getDisplayCutout) are needed:
@@ -67,7 +60,6 @@ object CutoutRemove {
         log("CutoutRemove: setting up")
         safeHook("CutoutRemove") {
             hookCutoutParser(param.classLoader)
-            clearDisplayInfoCutout(param.classLoader)
             forceCutoutModeAlways(param.classLoader)
         }
     }
@@ -89,6 +81,7 @@ object CutoutRemove {
                     spec.setField("mTopBound", Rect(0, 0, 0, 0))
                     spec.setField("mRightBound", Rect(0, 0, 0, 0))
                     spec.setField("mBottomBound", Rect(0, 0, 0, 0))
+                    spec.setField("mInsets", Insets.of(0, 0, 0, 0))
                 }
                 result
             })
@@ -96,26 +89,7 @@ object CutoutRemove {
         }.onFailure { log("CutoutRemove: Parser.parse hook failed", it) }
     }
 
-    // ── #2 DisplayContent.getDisplayInfo() → NO_CUTOUT on every read ──
-    private fun clearDisplayInfoCutout(classLoader: ClassLoader) {
-        runCatching {
-            val noCutout = classLoader.loadClass("android.view.DisplayCutout")
-                .getDeclaredField("NO_CUTOUT")
-                .apply { isAccessible = true }
-                .get(null)
-                ?: run { log("CutoutRemove: NO_CUTOUT is null"); return }
-            val dcClass = classLoader.loadClass("com.android.server.wm.DisplayContent")
-            val method = dcClass.getDeclaredMethod("getDisplayInfo")
-            method.isAccessible = true
-            hook(method, before { chain ->
-                chain.thisObject.getField("mDisplayInfo")
-                    ?.setField("displayCutout", noCutout)
-            })
-            log("CutoutRemove: DisplayContent.getDisplayInfo → NO_CUTOUT")
-        }.onFailure { log("CutoutRemove: getDisplayInfo hook failed", it) }
-    }
-
-    // ── #3 WindowLayoutStubImpl.getLayoutInDisplayCutoutMode() → ALWAYS (3) ──
+    // ── #2 WindowLayoutStubImpl.getLayoutInDisplayCutoutMode() → ALWAYS (3) ──
     //    MIUI gate for computeFrames() cutout clipping; 3 = lay out into the
     //    cutout area unconditionally (fixes centered content + defense-in-depth).
     private fun forceCutoutModeAlways(classLoader: ClassLoader) {
