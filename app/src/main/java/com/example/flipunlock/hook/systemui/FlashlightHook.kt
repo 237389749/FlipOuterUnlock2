@@ -1,9 +1,10 @@
 package com.example.flipunlock.hook.systemui
 
 import com.example.flipunlock.hook.BaseHook
+import com.example.flipunlock.hook.util.callMethod
+import com.example.flipunlock.hook.util.getField
 import com.example.flipunlock.hook.util.hook
 import com.example.flipunlock.hook.util.log
-import com.example.flipunlock.hook.util.replaceResult
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
