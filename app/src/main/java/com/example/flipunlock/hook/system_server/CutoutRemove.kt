@@ -90,7 +90,8 @@ object CutoutRemove {
             // Using public 5-param constructor: DisplayCutout(Insets, Rect, Rect, Rect, Rect)
             val dcClass = classLoader.loadClass("android.view.DisplayCutout")
             val insetsClass = classLoader.loadClass("android.graphics.Insets")
-            val zeroInsets = insetsClass.method("of", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType).invoke(null, 0, 0, 0, 0)
+            val intClass = Int::class.javaPrimitiveType!!
+            val zeroInsets = insetsClass.method("of", intClass, intClass, intClass, intClass).invoke(null, 0, 0, 0, 0)
             val zeroRect = Rect(0, 0, 0, 0)
             val safeCutout = dcClass.getConstructor(
                 insetsClass, Rect::class.java, Rect::class.java, Rect::class.java, Rect::class.java
