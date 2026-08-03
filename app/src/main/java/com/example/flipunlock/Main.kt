@@ -55,6 +55,12 @@ class Main : XposedModule() {
 
     override fun onPackageReady(param: PackageReadyParam) {
         log("Main: onPackageReady pkg=${param.packageName} first=${param.isFirstPackage}")
+        // Camera process: install CutoutRemove without Parser.parse zeroing
+        // so camera gets real cutout data (bounds) for layout calculations.
+        if (param.packageName == "com.android.camera") {
+            log("Main: loading CutoutRemove.hookApp for camera (real cutout preserved)")
+            CutoutRemove.hookApp(param)
+        }
         packageHooks.forEach { hook ->
             val isWildcard = hook.targetPackages.contains("*")
             val isTargeted = hook.targetPackages.contains(param.packageName)

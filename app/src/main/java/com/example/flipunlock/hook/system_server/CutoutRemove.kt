@@ -2,27 +2,32 @@ package com.example.flipunlock.hook.system_server
 
 import android.graphics.Insets
 import android.graphics.Path
+import android.graphics.Rect
 import com.example.flipunlock.hook.util.*
+import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 
 /**
  * Remove the outer-screen display cutout so windows lay out across the full
  * 1208px width instead of being clipped to the cutout-safe area (~810px).
  *
- * Approach: hook Parser.parse() with SVG string filter to match only the
- * outer display cutout spec. Zero insets (fullscreen) + path (no visible
- * cutout), keep bounds intact (camera needs non-empty bounding rects).
+ * Approach: Parser.parse() is hooked in system_server to zero ALL cutout
+ * specs (bounds+insets+path) for full-screen layout. The camera process
+ * (com.android.camera) is handled separately via hookApp() in Main.kt —
+ * it does NOT install the Parser.parse zeroing hook, so the camera gets
+ * real cutout data for its layout calculations (getBoundingRectRight/Left
+ * need non-null Rects).
  *
  * Camera NPE lesson: zeroing bounds to Rect(0,0,0,0) makes them empty →
  * DisplayCutout.getBoundingRects() returns empty list → getBoundingRectRight/
- * Left() return null → camera NPE in CamLayoutManagerImpl. Keeping bounds
- * avoids this.
+ * Left() return null → camera NPE in CamLayoutManagerImpl. Skipping the
+ * camera process avoids this.
  *
- * Hook #1 (Parser.parse): string-filter outer spec, zero insets+path only.
+ * Hook #1 (Parser.parse): zero ALL specs, skip camera process.
  * Hook #2 (getLayoutInDisplayCutoutMode → ALWAYS): defense-in-depth.
  *
  * Toggle: persist.flipunlock.display.cutout (default true)
- * Process: system_server
+ * Process: system_server + all scoped app processes
  */
 object CutoutRemove {
 
@@ -31,16 +36,26 @@ object CutoutRemove {
             log("CutoutRemove: DISABLED by persist.flipunlock.display.cutout")
             return
         }
-        log("CutoutRemove: setting up")
+        log("CutoutRemove: setting up in system_server")
         safeHook("CutoutRemove") {
             hookCutoutParser(param.classLoader)
             forceCutoutModeAlways(param.classLoader)
         }
     }
 
-    // ── #1 CutoutSpecification.Parser.parse() → zero OUTER spec insets+path only ──
-    //    String filter: "M 604,664" / "@bind_right_cutout" = outer display cutout
-    //    from config_secondaryBuiltInDisplayCutout. Keep bounds intact for camera.
+    /** Called from onPackageReady for camera process — skip zeroing. */
+    fun hookApp(param: PackageReadyParam) {
+        if (!Config.displayCutout) return
+        log("CutoutRemove: setting up in ${param.packageName} (real cutout preserved)")
+        safeHook("CutoutRemove") {
+            // Camera process: do NOT install Parser.parse zeroing hook.
+            // Only install ALWAYS mode for defense-in-depth.
+            forceCutoutModeAlways(param.classLoader)
+        }
+    }
+
+    // ── #1 CutoutSpecification.Parser.parse() → zero ALL specs ──
+    //    Only installed in system_server (not camera process).
     private fun hookCutoutParser(classLoader: ClassLoader) {
         runCatching {
             val parserClass = classLoader.loadClass(
@@ -48,18 +63,15 @@ object CutoutRemove {
             val parseMethod = parserClass.method("parse", String::class.java)
             hook(parseMethod, after { chain, result ->
                 val spec = result ?: return@after result
-                val originalSpec = chain.args[0] as? String ?: return@after result
-                if (originalSpec.contains("M 604,664") ||
-                    originalSpec.contains("@bind_right_cutout")) {
-                    // Zero insets → no window clipping → fullscreen
-                    spec.setField("mInsets", Insets.of(0, 0, 0, 0))
-                    // Clear path → no visible cutout area
-                    spec.setField("mPath", Path())
-                    // Keep bounds intact → getBoundingRectRight/Left() return non-null Rect for camera
-                }
+                spec.setField("mLeftBound", Rect(0, 0, 0, 0))
+                spec.setField("mTopBound", Rect(0, 0, 0, 0))
+                spec.setField("mRightBound", Rect(0, 0, 0, 0))
+                spec.setField("mBottomBound", Rect(0, 0, 0, 0))
+                spec.setField("mInsets", Insets.of(0, 0, 0, 0))
+                spec.setField("mPath", Path())
                 result
             })
-            log("CutoutRemove: Parser.parse → zero outer display cutout insets+path only (bounds kept)")
+            log("CutoutRemove: Parser.parse → zero ALL cutout specs")
         }.onFailure { log("CutoutRemove: Parser.parse hook failed", it) }
     }
 
