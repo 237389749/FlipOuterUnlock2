@@ -5,6 +5,7 @@ import android.graphics.Path
 import android.graphics.Rect
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
+import java.lang.reflect.Constructor
 
 /**
  * Remove the outer-screen display cutout so windows lay out across the full
@@ -30,15 +31,15 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *           └→ SystemUI HideDisplayCutoutOrganizer → SurfaceFlinger display crop
  *
  * Hook #1 (Parser.parse): zero ALL bounds/insets/path on every parsed spec.
- *   Camera (com.android.camera) is excluded from LSPosed scope so it reads
- *   the real cutout before this hook zeroes it.
  *
- * Zeroing the cutout at the source cascades everywhere — no per-app API
- * hooks (Display.getCutout / WindowInsets.getDisplayCutout) are needed:
- * apps read the cutout from the display info produced here. Add them only
- * if some app caches a stale cutout or queries a MIUI-specific source.
+ * Hook #2 (pathAndDisplayCutoutFromSpec): the single choke point — ALL cutout
+ *   paths converge here. Return (null, NO_CUTOUT) to skip entire pipeline.
  *
- * Hook #3 (WindowLayoutStubImpl.getLayoutInDisplayCutoutMode → ALWAYS): the
+ * Hook #3 (Display.getCutout): return NO_CUTOUT for any direct queries.
+ *
+ * Hook #4 (Display.getFlipFoldedCutout): return null for MIUI-specific queries.
+ *
+ * Hook #5 (WindowLayoutStubImpl.getLayoutInDisplayCutoutMode → ALWAYS): the
  *   MIUI gate WMS's computeFrames() consults to decide whether to clip a
  *   window's parent frame by the cutout-safe area. With an empty cutout the
  *   clip is a no-op, but forcing mode=3 (LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS)
@@ -60,13 +61,20 @@ object CutoutRemove {
         }
         log("CutoutRemove: setting up")
         safeHook("CutoutRemove") {
+            val noCutout = constructNoCutout(param.classLoader)
             hookCutoutParser(param.classLoader)
+            if (noCutout != null) {
+                hookPathAndDisplayCutoutFromSpec(param.classLoader, noCutout)
+                hookDisplayGetCutout(param.classLoader, noCutout)
+                hookGetFlipFoldedCutout(param.classLoader)
+            } else {
+                log("CutoutRemove: NO_CUTOUT unavailable, skipping Display-level hooks")
+            }
             forceCutoutModeAlways(param.classLoader)
         }
     }
 
     // ── #1 CutoutSpecification.Parser.parse() → zero ALL specs ──
-    //    Camera (com.android.camera) excluded from LSPosed scope.
     private fun hookCutoutParser(classLoader: ClassLoader) {
         runCatching {
             val parserClass = classLoader.loadClass(
@@ -86,7 +94,76 @@ object CutoutRemove {
         }.onFailure { log("CutoutRemove: Parser.parse hook failed", it) }
     }
 
-    // ── #2 WindowLayoutStubImpl.getLayoutInDisplayCutoutMode() → ALWAYS (3) ──
+    // ── #2 DisplayCutout.pathAndDisplayCutoutFromSpec() → (null, NO_CUTOUT) ──
+    //    The single choke point — ALL cutout paths converge here.
+    private fun hookPathAndDisplayCutoutFromSpec(classLoader: ClassLoader, noCutout: Any) {
+        runCatching {
+            val dcClass = classLoader.loadClass("android.view.DisplayCutout")
+            val method = dcClass.getDeclaredMethod(
+                "pathAndDisplayCutoutFromSpec",
+                Path::class.java, Rect::class.java,
+                Int::class.javaPrimitiveType, Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType, Int::class.javaPrimitiveType,
+                Float::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
+            method.isAccessible = true
+            hook(method, replaceResult(android.util.Pair(null, noCutout)))
+            log("CutoutRemove: pathAndDisplayCutoutFromSpec → (null, NO_CUTOUT)")
+        }.onFailure { log("CutoutRemove: pathAndDisplayCutoutFromSpec hook failed", it) }
+    }
+
+    // ── #3 Display.getCutout() → NO_CUTOUT ──
+    private fun hookDisplayGetCutout(classLoader: ClassLoader, noCutout: Any) {
+        runCatching {
+            val method = android.view.Display::class.java.getMethod("getCutout")
+            hook(method, replaceResult(noCutout))
+            log("CutoutRemove: Display.getCutout → NO_CUTOUT")
+        }.onFailure { log("CutoutRemove: Display.getCutout hook failed", it) }
+    }
+
+    // ── #4 Display.getFlipFoldedCutout() → null ──
+    private fun hookGetFlipFoldedCutout(classLoader: ClassLoader) {
+        runCatching {
+            val method = android.view.Display::class.java.getMethod("getFlipFoldedCutout")
+            hook(method, replaceResult(null))
+            log("CutoutRemove: Display.getFlipFoldedCutout → null")
+        }.onFailure { log("CutoutRemove: getFlipFoldedCutout hook failed (may not exist)") }
+    }
+
+    // ── Construct NO_CUTOUT via reflection ──
+    private fun constructNoCutout(classLoader: ClassLoader): Any? {
+        // Try static field first
+        runCatching {
+            val f = classLoader.loadClass("android.view.DisplayCutout")
+                .getDeclaredField("NONE")
+                .apply { isAccessible = true }
+            return f.get(null)
+        }
+        // Brute-force: find a constructor and pass null/zero args
+        runCatching {
+            val dcClass = classLoader.loadClass("android.view.DisplayCutout")
+            val ctors = dcClass.declaredConstructors
+            for (ctor in ctors.sortedBy { it.parameterCount }) {
+                ctor.isAccessible = true
+                val args = ctor.parameterTypes.map { t ->
+                    when {
+                        t == Int::class.javaPrimitiveType || t == Integer::class.java -> 0
+                        t == Long::class.javaPrimitiveType -> 0L
+                        t == Boolean::class.javaPrimitiveType -> false
+                        t == Float::class.javaPrimitiveType -> 0f
+                        t == Insets::class.java -> Insets.of(0, 0, 0, 0)
+                        t == Rect::class.java -> Rect(0, 0, 0, 0)
+                        t == Path::class.java -> Path()
+                        t == List::class.java -> emptyList<Any>()
+                        else -> null
+                    }
+                }.toTypedArray()
+                return ctor.newInstance(*args)
+            }
+        }
+        return null
+    }
+
+    // ── #5 WindowLayoutStubImpl.getLayoutInDisplayCutoutMode() → ALWAYS (3) ──
     //    MIUI gate for computeFrames() cutout clipping; 3 = lay out into the
     //    cutout area unconditionally (fixes centered content + defense-in-depth).
     private fun forceCutoutModeAlways(classLoader: ClassLoader) {

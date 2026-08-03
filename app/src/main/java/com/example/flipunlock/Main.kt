@@ -59,11 +59,6 @@ class Main : XposedModule() {
             val isWildcard = hook.targetPackages.contains("*")
             val isTargeted = hook.targetPackages.contains(param.packageName)
             if (!isWildcard && !isTargeted) return@forEach
-            // Exclusion check: skip excluded packages (e.g. camera from cutout hooks)
-            if (hook.excludedPackages.contains(param.packageName)) {
-                log("Main: skipping ${hook.javaClass.simpleName} for ${param.packageName} (excluded)")
-                return@forEach
-            }
             // "*" hooks use the first package's classloader (framework classes);
             // skip them for subsequent packages to avoid duplicate hooking.
             if (isWildcard && !param.isFirstPackage) return@forEach
