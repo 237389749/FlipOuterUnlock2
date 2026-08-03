@@ -1,6 +1,7 @@
 package com.example.flipunlock.hook.system_server
 
 import android.graphics.Insets
+import android.graphics.Path
 import android.graphics.Rect
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
@@ -77,11 +78,11 @@ object CutoutRemove {
                 val originalSpec = chain.args[0] as? String ?: return@after result
                 if (originalSpec.contains("M 604,664") ||
                     originalSpec.contains("@bind_right_cutout")) {
-                    spec.setField("mLeftBound", Rect(0, 0, 0, 0))
-                    spec.setField("mTopBound", Rect(0, 0, 0, 0))
-                    spec.setField("mRightBound", Rect(0, 0, 0, 0))
-                    spec.setField("mBottomBound", Rect(0, 0, 0, 0))
+                    // Zero insets → no window clipping → fullscreen
                     spec.setField("mInsets", Insets.of(0, 0, 0, 0))
+                    // Clear path → no visible cutout area
+                    spec.setField("mPath", Path())
+                    // Keep bounds intact → getBoundingRectRight/Left() return non-null Rect for camera
                 }
                 result
             })
