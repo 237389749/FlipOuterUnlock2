@@ -116,9 +116,9 @@ object ControlCenterHook : BaseHook() {
         }
 
         val controllerClasses = listOf(
-            "miui.systemui.controlcenter.panel.main.qs.EditButtonController",
-            "miui.systemui.controlcenter.panel.main.qs.QSListController",
-            "miui.systemui.controlcenter.panel.main.qs.CompactQSListController",
+            "miui.systemui.controlcenter.panel.main.p113qs.EditButtonController",
+            "miui.systemui.controlcenter.panel.main.p113qs.QSListController",
+            "miui.systemui.controlcenter.panel.main.p113qs.CompactQSListController",
             "miui.systemui.controlcenter.panel.main.devicecenter.entry.DeviceCenterEntryController",
             "miui.systemui.controlcenter.panel.main.devicecontrol.DeviceControlsEntryController",
         )
@@ -136,7 +136,7 @@ object ControlCenterHook : BaseHook() {
 
         runCatching {
             val tileClass = pluginLoader.loadClass(
-                "miui.systemui.controlcenter.qs.tileview.QSTileItemView")
+                "miui.systemui.controlcenter.p114qs.tileview.QSTileItemView")
             hook(tileClass.method("onFinishInflate"), after { tileChain, tileResult ->
                 (tileChain.thisObject as? FrameLayout)?.setOnLongClickListener { v ->
                     tileChain.thisObject
