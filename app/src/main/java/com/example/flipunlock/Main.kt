@@ -2,6 +2,7 @@ package com.example.flipunlock
 
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.aod.AodHook
+import com.example.flipunlock.hook.fliphome.RecentsCacheFix
 import com.example.flipunlock.hook.fliphome.WidgetRemove
 import com.example.flipunlock.hook.fliphome.WidgetTouchPassthrough
 import com.example.flipunlock.hook.system_server.AppContinuity
@@ -29,6 +30,7 @@ class Main : XposedModule() {
     private val packageHooks = listOf<BaseHook>(
         // fliphome/ — widget overlay
         WidgetRemove,                   // widget overlay complete removal (refreshWindow ADD→REMOVE) — confirmed working
+        RecentsCacheFix,                // clear RecentsTaskLoadPlan cache before entering overview so all tasks are loaded fresh
         // WidgetTouchPassthrough,      // FLAG_NOT_TOUCHABLE verified applied via dumpsys, yet touches are STILL
         //                              // intercepted → a second MIUI input mechanism reserves the region while the
         //                              // overlay window exists; flag-only passthrough is insufficient. Kept for reference.
