@@ -11,18 +11,18 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  * Remove the outer-screen display cutout so windows lay out across the full
  * 1208px width instead of being clipped to the cutout-safe area (~810px).
  *
- * Approach: Parser.parse() uses string filtering to match outer screen spec only
- * ("M 604,664" or "@bind_right_cutout" from config_secondaryBuiltInDisplayCutout).
- * For outer screen spec: zero mInsets (fullscreen layout) + mPath (hide cutout),
- * but PRESERVE bounds (mLeftBound etc.) so camera can access non-null bounding rects.
- *
- * Camera NPE root cause: zeroed bounds → DisplayCutout internal Rect fields
- * become null → camera code accessing Rect.right on null → NPE.
- * Fix: preserve bounds, only zero mInsets + mPath for outer screen spec.
+ * Approach:
+ * - system_server: Parser.parse() zeros mInsets + mPath for outer screen spec only
+ *   (string filter: "M 604,664" / "@bind_right_cutout"), preserves bounds.
+ * - Camera process: hook Display.getCutout() → return valid DisplayCutout with
+ *   zero insets + zero bounds. Camera code (l3.t.p / C11138t.mo18139p) accesses
+ *   DisplayCutout via Optional chain; if getCutout() returns null → NPE on Rect.right.
+ *   Fix: return non-null DisplayCutout so Optional.ifPresent() executes.
  *
  * Hook #1 (Parser.parse, system_server): string filter → zero mInsets + mPath, preserve bounds.
- * Hook #2 (DisplayCutout.getBoundingRect*, camera): return empty Rect (defense).
- * Hook #3 (getLayoutInDisplayCutoutMode → ALWAYS): defense-in-depth.
+ * Hook #2 (Display.getCutout(), camera): return valid DisplayCutout (zero insets + zero bounds).
+ * Hook #3 (DisplayCutout.getBoundingRect*, camera): return empty Rect (defense).
+ * Hook #4 (getLayoutInDisplayCutoutMode → ALWAYS): defense-in-depth.
  *
  * Toggle: persist.flipunlock.display.cutout (default true)
  */
@@ -45,6 +45,7 @@ object CutoutRemove {
         if (!Config.displayCutout) return
         log("CutoutRemove: hookApp in ${param.packageName}")
         safeHook("CutoutRemove") {
+            hookDisplayGetCutout(param.classLoader)
             hookBoundingRects(param.classLoader)
             forceCutoutModeAlways(param.classLoader)
         }
@@ -75,8 +76,32 @@ object CutoutRemove {
         }.onFailure { log("CutoutRemove: Parser.parse hook failed", it) }
     }
 
-    // ── #2 DisplayCutout getter methods → empty Rect (camera, defense-in-depth) ──
-    //    Bounds are preserved in Parser.parse, so camera should work.
+    // ── #2 Display.getCutout() → valid DisplayCutout (camera, NPE prevention) ──
+    //    Camera code (C11138t/l3.t) does:
+    //      Optional.ofNullable(display.getCutout()).flatMap(...).ifPresent(consumer)
+    //    If getCutout() returns null → Optional empty → field f32924q not set → NPE on Rect.right.
+    //    Fix: return a valid DisplayCutout with zero insets + zero bounds.
+    //    This ensures Optional chain executes, camera gets non-null bounding rects.
+    private fun hookDisplayGetCutout(classLoader: ClassLoader) {
+        runCatching {
+            val displayClass = classLoader.loadClass("android.view.Display")
+            val getCutoutMethod = displayClass.method("getCutout")
+            // Create a valid DisplayCutout with zero insets + zero bounds
+            // Using public 5-param constructor: DisplayCutout(Insets, Rect, Rect, Rect, Rect)
+            val dcClass = classLoader.loadClass("android.view.DisplayCutout")
+            val insetsClass = classLoader.loadClass("android.graphics.Insets")
+            val zeroInsets = insetsClass.method("of", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType).invoke(null, 0, 0, 0, 0)
+            val zeroRect = Rect(0, 0, 0, 0)
+            val safeCutout = dcClass.getConstructor(
+                insetsClass, Rect::class.java, Rect::class.java, Rect::class.java, Rect::class.java
+            ).newInstance(zeroInsets, zeroRect, zeroRect, zeroRect, zeroRect)
+            hook(getCutoutMethod, replaceResult(safeCutout))
+            log("CutoutRemove: Display.getCutout() → valid DisplayCutout (zero insets + zero bounds)")
+        }.onFailure { log("CutoutRemove: Display.getCutout() hook failed", it) }
+    }
+
+    // ── #3 DisplayCutout getter methods → empty Rect (camera, defense-in-depth) ──
+    //    Bounds are provided by hookDisplayGetCutout, so camera should work.
     //    These hooks are backup in case camera uses different code paths.
     private fun hookBoundingRects(classLoader: ClassLoader) {
         val dcClass = classLoader.loadClass("android.view.DisplayCutout")
@@ -104,7 +129,7 @@ object CutoutRemove {
         }.onFailure { log("CutoutRemove: getBoundingRects hook failed", it) }
     }
 
-    // ── #3 WindowLayoutStubImpl.getLayoutInDisplayCutoutMode() → ALWAYS (3) ──
+    // ── #4 WindowLayoutStubImpl.getLayoutInDisplayCutoutMode() → ALWAYS (3) ──
     private fun forceCutoutModeAlways(classLoader: ClassLoader) {
         runCatching {
             val cls = classLoader.loadClass("android.view.WindowLayoutStubImpl")
