@@ -5,6 +5,7 @@ import com.example.flipunlock.hook.util.callMethod
 import com.example.flipunlock.hook.util.getField
 import com.example.flipunlock.hook.util.hook
 import com.example.flipunlock.hook.util.log
+import com.example.flipunlock.hook.util.method
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
@@ -63,7 +64,8 @@ object FlashlightHook : BaseHook() {
                 "com.android.systemui.p037qs.tiles.MiuiFlashlightTile")
             val expandableClass = classLoader.loadClass(
                 "com.android.systemui.animation.Expandable")
-            val handleClick = tileClass.getDeclaredMethod("handleClick", expandableClass)
+            // handleClick is declared in parent QSTileImpl, use method() to walk hierarchy
+            val handleClick = tileClass.method("handleClick", expandableClass)
 
             val controllerClass = classLoader.loadClass(
                 "com.android.systemui.controlcenter.policy.MiuiFlashlightControllerImpl")
