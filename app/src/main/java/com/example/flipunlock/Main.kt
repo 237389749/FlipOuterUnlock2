@@ -10,6 +10,7 @@ import com.example.flipunlock.hook.system_server.AppFullscreen
 import com.example.flipunlock.hook.system_server.AppRestriction
 import com.example.flipunlock.hook.system_server.AppWhitelist
 import com.example.flipunlock.hook.system_server.CutoutRemove
+import com.example.flipunlock.hook.systemui.FlashlightHook
 import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.log
 
@@ -36,6 +37,8 @@ class Main : XposedModule() {
         //                              // overlay window exists; flag-only passthrough is insufficient. Kept for reference.
         // aod/ — always-on display on the outer screen (app side: DreamService + runtime DozeMachine)
         AodHook,                        // #5 cutout hook now scoped to AOD call path only
+        // systemui/ — SystemUI process hooks
+        FlashlightHook,                 // bypass "flip to turn on flashlight" on outer screen
     )
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
