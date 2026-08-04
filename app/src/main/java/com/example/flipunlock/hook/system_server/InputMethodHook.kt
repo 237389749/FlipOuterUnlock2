@@ -1,4 +1,4 @@
-package com.example.flipunlock.hook.ime
+package com.example.flipunlock.hook.system_server
 
 import android.content.Context
 import com.example.flipunlock.hook.util.*

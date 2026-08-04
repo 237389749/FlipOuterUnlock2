@@ -13,7 +13,7 @@ import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.system_server.SubScreenGesture
 import com.example.flipunlock.hook.systemui.ControlCenterHook
 import com.example.flipunlock.hook.systemui.FlashlightHook
-import com.example.flipunlock.hook.ime.InputMethodHook
+import com.example.flipunlock.hook.system_server.InputMethodHook
 import com.example.flipunlock.hook.ime.SogouInputHook
 import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.log
