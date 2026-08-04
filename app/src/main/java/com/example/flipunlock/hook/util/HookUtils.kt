@@ -5,6 +5,7 @@ import com.example.flipunlock.module
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.HookHandle
 import io.github.libxposed.api.XposedInterface.Hooker
+import org.luckypray.dexkit.DexKitBridge
 import java.lang.reflect.Executable
 
 private const val LOG_TAG = "FlipOuterUnlock"
@@ -48,6 +49,11 @@ internal fun before(block: (Chain) -> Unit): Hooker = Hooker { chain ->
 
 internal inline fun <T> runWithCleanup(cleanup: () -> Unit, block: () -> T): T {
     return runCatching(block).also { cleanup() }.getOrThrow()
+}
+
+internal fun createDexKitBridge(classLoader: ClassLoader): DexKitBridge {
+    System.loadLibrary("dexkit")
+    return DexKitBridge.create(classLoader, false)
 }
 
 internal fun hookScope(origin: Executable, activeHooker: (Chain) -> Any?): HookScope {

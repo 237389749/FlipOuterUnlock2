@@ -13,6 +13,8 @@ import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.system_server.SubScreenGesture
 import com.example.flipunlock.hook.systemui.ControlCenterHook
 import com.example.flipunlock.hook.systemui.FlashlightHook
+import com.example.flipunlock.hook.ime.InputMethodHook
+import com.example.flipunlock.hook.ime.SogouInputHook
 import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.log
 
@@ -42,6 +44,8 @@ class Main : XposedModule() {
         // systemui/ — SystemUI process hooks
         FlashlightHook,                 // bypass "flip to turn on flashlight" on outer screen
         ControlCenterHook,              // restore normal (non-compact) control center style
+        // ime/ — Sogou IME process
+        SogouInputHook,                 // IME toolbar + clipboard fix (DexKit)
     )
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
@@ -58,6 +62,7 @@ class Main : XposedModule() {
         AppContinuity.hook(param)
         AodHook.hookFramework(param)    // #5 cutout hook now scoped to AOD call path only
         SubScreenGesture.hook(param)      // double-tap-to-sleep on outer screen
+        InputMethodHook.hook(param)        // IME freedom: allow any rotation, unlock IME choice
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
