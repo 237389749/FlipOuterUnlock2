@@ -10,6 +10,7 @@ import com.example.flipunlock.hook.system_server.AppFullscreen
 import com.example.flipunlock.hook.system_server.AppRestriction
 import com.example.flipunlock.hook.system_server.AppWhitelist
 import com.example.flipunlock.hook.system_server.CutoutRemove
+import com.example.flipunlock.hook.system_server.SubScreenGesture
 import com.example.flipunlock.hook.systemui.ControlCenterHook
 import com.example.flipunlock.hook.systemui.FlashlightHook
 import com.example.flipunlock.hook.util.Config
@@ -56,6 +57,7 @@ class Main : XposedModule() {
         AppFullscreen.hook(param)
         AppContinuity.hook(param)
         AodHook.hookFramework(param)    // #5 cutout hook now scoped to AOD call path only
+        SubScreenGesture.hook(param)      // double-tap-to-sleep on outer screen
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
