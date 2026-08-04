@@ -10,32 +10,24 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  * Remove the "flip phone to turn on flashlight" dialog on the outer screen.
  *
  * Problem:
- *   On the outer (tiny) screen, clicking the flashlight tile when it's OFF
- *   shows an AlertDialog with a flip-animation video and waits for the
- *   flip sensor before toggling. The user must physically flip the device.
+ *   On the outer (tiny) screen, clicking the flashlight tile when OFF:
+ *   1. mHandler.post(ExternalSyntheticLambda0(controller, 2)) → shows AlertDialog with flip video
+ *   2. setFlipListening(true) → waits for flip sensor → then toggles
  *
- * Root cause (MiuiFlashlightTile.handleClick, line 98-104):
- *   if (forceOff || batteryOff)           → error toast
- *   else if (isOn || !isTinyScreen)       → direct toggle (normal path)
- *   else if (mTorchAvailable)             → flip dialog + sensor wait (tiny screen ON path)
+ * The flip prompt is an AlertDialog (NOT showStateMessage).
+ * ExternalSyntheticLambda0 case 2 creates the dialog with flip_flashlight_dialog_content layout.
  *
- * The flip dialog is ExternalSyntheticLambda0(controller, 2) which creates
- * an AlertDialog with a video showing "flip phone to turn on flashlight".
- *
- * Fix: Hook handleClick() to intercept the tiny-screen-turning-ON case.
- *   Instead of showing the dialog + sensor wait, directly toggle via
- *   controller.setFlashlight(!current). All other cases pass through.
+ * Fix (two hooks):
+ *   Hook #1: setFlipListening → directly toggle (confirmed working, bypasses sensor wait)
+ *   Hook #2: ExternalSyntheticLambda0.run() → skip case 2 (the dialog creation)
  *
  * Ref: refMD Hook_Chain_Map.md §19
  */
 object FlashlightHook : BaseHook() {
 
-    // "android" is required because LSPosed v2.0.1 only fires onPackageReady("android")
-    // in the systemui process — onPackageReady("com.android.systemui") is never called.
     override val targetPackages = listOf("android", "com.android.systemui")
 
     override fun setupHooks(param: PackageReadyParam) {
-        // Process guard: only install in SystemUI
         if (param.packageName == "android") {
             val proc = currentProcessName()
             if (proc != "com.android.systemui") {
@@ -47,57 +39,114 @@ object FlashlightHook : BaseHook() {
             log("FlashlightHook: setupHooks pkg=${param.packageName}")
         }
 
-        hookHandleClick(param.classLoader)
+        hookSetFlipListening(param.classLoader)
+        hookFlipDialogRunnable(param.classLoader)
     }
 
     /**
-     * Hook MiuiFlashlightTile.handleClick() to bypass the flip dialog.
-     *
-     * When on tiny screen + turning ON + not forceOff/batteryOff:
-     *   Original → shows AlertDialog + registers flip sensor
-     *   Ours     → directly calls setFlashlight(!current)
-     *
-     * All other cases (turning OFF, non-tiny screen, force/battery off)
-     * pass through to the original handleClick().
+     * Hook #1: setFlipListening → directly toggle flashlight.
+     * When called with true (user clicked tile on tiny screen):
+     *   toggle flashlight immediately, skip flip sensor registration.
+     * When called with false (dialog dismissed / sensor fired):
+     *   no-op (original would deregister sensor).
      */
-    private fun hookHandleClick(classLoader: ClassLoader) {
+    private fun hookSetFlipListening(classLoader: ClassLoader) {
         runCatching {
-            val tileClass = classLoader.loadClass(
-                "com.android.systemui.qs.tiles.MiuiFlashlightTile")
             val controllerClass = classLoader.loadClass(
                 "com.android.systemui.controlcenter.policy.MiuiFlashlightControllerImpl")
+            val setFlipListening = controllerClass.getDeclaredMethod(
+                "setFlipListening", Boolean::class.javaPrimitiveType!!)
             val setFlashlight = controllerClass.getDeclaredMethod(
                 "setFlashlight", Boolean::class.javaPrimitiveType!!)
             val isEnabled = controllerClass.getDeclaredMethod("isEnabled")
-            val controllerField = tileClass.getDeclaredField("flashlightController")
-            controllerField.isAccessible = true
-            val forceOffField = controllerClass.getDeclaredField("mForceOff")
-            forceOffField.isAccessible = true
-            val batteryOffField = controllerClass.getDeclaredField("mBatteryOff")
-            batteryOffField.isAccessible = true
 
-            // handleClick is declared directly on MiuiFlashlightTile (not inherited)
-            hook(tileClass.method("handleClick")) { chain ->
-                val tile = chain.thisObject!!
-                val controller = controllerField.get(tile)
-
-                val forceOff = forceOffField.getBoolean(controller)
-                val batteryOff = batteryOffField.getBoolean(controller)
-
-                if (!forceOff && !batteryOff) {
-                    val isOn = isEnabled.invoke(controller) as Boolean
-                    // Flashlight is OFF on tiny screen → skip dialog, toggle directly
-                    if (!isOn) {
-                        setFlashlight.invoke(controller, true)
-                        log("FlashlightHook: handleClick → direct toggle ON (bypassed flip dialog)")
-                        return@hook null
-                    }
+            hook(setFlipListening) { chain ->
+                val startListening = chain.args[0] as Boolean
+                if (startListening) {
+                    val current = isEnabled.invoke(chain.thisObject) as Boolean
+                    setFlashlight.invoke(chain.thisObject, !current)
+                    log("FlashlightHook: setFlipListening(true) → toggled to ${!current}")
                 }
-                // All other cases: turning OFF, force/battery off → original behavior
+                null // skip original — don't register flip sensor
+            }
+            log("FlashlightHook: #1 setFlipListening → direct toggle")
+        }.onFailure { log("FlashlightHook: #1 setFlipListening failed", it) }
+    }
+
+    /**
+     * Hook #2: ExternalSyntheticLambda0.run() → skip case 2 (dialog creation).
+     *
+     * ExternalSyntheticLambda0 is a synthetic Runnable with multiple cases:
+     *   case 0: init camera torch callback
+     *   case 1: show error toast (low battery / high temp)
+     *   case 2: show flip dialog ← WE WANT TO SKIP THIS
+     *   default: init flash device
+     *
+     * The case ID is stored as an int instance field (f$1 in JADX, obfuscated on device).
+     * We find it by type (Int) since the class only has one int field.
+     *
+     * Class name may have JADX obfuscation prefix (p037 etc.), so we try multiple variants.
+     */
+    private fun hookFlipDialogRunnable(classLoader: ClassLoader) {
+        // Try multiple class name variants
+        val candidates = listOf(
+            "com.android.systemui.p037qs.controlcenter.policy.MiuiFlashlightControllerImpl\$\$ExternalSyntheticLambda0",
+            "com.android.systemui.qs.controlcenter.policy.MiuiFlashlightControllerImpl\$\$ExternalSyntheticLambda0",
+            "com.android.systemui.controlcenter.policy.MiuiFlashlightControllerImpl\$\$ExternalSyntheticLambda0",
+        )
+
+        var lambdaClass: Class<*>? = null
+        for (name in candidates) {
+            lambdaClass = runCatching { classLoader.loadClass(name) }.getOrNull()
+            if (lambdaClass != null) {
+                log("FlashlightHook: #2 found lambda class: $name")
+                break
+            }
+        }
+
+        if (lambdaClass == null) {
+            // Fallback: derive from controller's actual package
+            lambdaClass = runCatching {
+                val controllerPkg = classLoader.loadClass(
+                    "com.android.systemui.controlcenter.policy.MiuiFlashlightControllerImpl")
+                    .`package`?.name ?: return@runCatching null
+                classLoader.loadClass(
+                    "$controllerPkg.MiuiFlashlightControllerImpl\$\$ExternalSyntheticLambda0")
+            }.getOrNull()
+        }
+
+        if (lambdaClass == null) {
+            log("FlashlightHook: #2 ExternalSyntheticLambda0 class not found, dialog suppress disabled")
+            return
+        }
+
+        // Find the int field (case ID) — name is obfuscated on device, find by type
+        val caseIdField = lambdaClass.declaredFields.firstOrNull {
+            it.type == Int::class.javaPrimitiveType
+        }
+        if (caseIdField == null) {
+            log("FlashlightHook: #2 no int field found in lambda class")
+            return
+        }
+        caseIdField.isAccessible = true
+
+        runCatching {
+            val runMethod = lambdaClass.getDeclaredMethod("run")
+            runMethod.isAccessible = true
+
+            hook(runMethod) { chain ->
+                val caseId = caseIdField.getInt(chain.thisObject)
+
+                if (caseId == 2) {
+                    // Case 2: flip dialog — skip entirely
+                    log("FlashlightHook: #2 ExternalSyntheticLambda0.run() case 2 → skipped (flip dialog)")
+                    return@hook null
+                }
+                // All other cases: run normally
                 chain.proceed()
             }
-            log("FlashlightHook: handleClick → direct toggle on tiny screen")
-        }.onFailure { log("FlashlightHook: handleClick hook failed", it) }
+            log("FlashlightHook: #2 ExternalSyntheticLambda0.run() → skip case 2")
+        }.onFailure { log("FlashlightHook: #2 lambda hook failed", it) }
     }
 
     private fun currentProcessName(): String? = runCatching {
