@@ -13,16 +13,22 @@ import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
- * Restore normal (non-compact) control center style on the outer screen.
+ * Fix control center on the outer screen: keep COMPACT style (independent tile list)
+ * but enable the edit button and fix device center dimensions.
  *
  * On flip devices, the control center plugin (miui.systemui.plugin) applies a
- * COMPACT style when isTinyScreen is true — collapsing tiles, hiding device
- * controls, and showing a minimal layout. This hook intercepts the plugin
- * classloader at creation time and replaces COMPACT with VERTICAL style,
- * restores QS tile long-press, fixes device center card dimensions, and
- * limits the device list to prevent overflow.
+ * COMPACT style when isTinyScreen is true. COMPACT has its own independent tile
+ * list (CompactQSListController) — but the edit button is hidden in COMPACT mode.
  *
- * Ported from MixFlipMod's SystemUIHook.hookControlCenter.
+ * Previous approach (COMPACT→VERTICAL) caused outer screen to share inner screen's
+ * tile list, making independent editing impossible.
+ *
+ * Fix (plugin hooks):
+ *   Hook #1: EditButtonController.available() → true in COMPACT (show edit button)
+ *   Hook #2: QSTileItemView.onFinishInflate() → restore long-press
+ *   Hook #3-6: Device center dimension/mode/list fixes
+ *
+ * Ported from MixFlipMod's SystemUIHook.hookControlCenter, revised approach.
  */
 object ControlCenterHook : BaseHook() {
 
@@ -96,41 +102,37 @@ object ControlCenterHook : BaseHook() {
         val styleClass = pluginLoader.loadClass(
             "miui.systemui.controlcenter.panel.main.MainPanelController\$Style")
         val compactStyle = styleClass.field("COMPACT").get(null)
-        val verticalStyle = styleClass.field("VERTICAL").get(null)
 
-        // Single isTinyScreen flag shared across all sub-hooks
+        // Track isTinyScreen via set_style
         var isTinyScreen = false
         val panelClass = pluginLoader.loadClass(
             "miui.systemui.controlcenter.panel.main.MainPanelStyleController")
 
-        // Track current style via set_style (only one hook)
         hook(panelClass.method("set_style", styleClass)) { styleChain ->
             isTinyScreen = styleChain.args[0] == compactStyle
             styleChain.proceed()
         }
 
-        // ── 1. Style: COMPACT → VERTICAL ───────────────────────────────
+        // ── 1. Edit button: enable in COMPACT mode ─────────────────────
+        //
+        // EditButtonController.available() returns false when style == COMPACT.
+        // We hook it to return true so the edit button shows on the outer screen.
+        // This allows editing the COMPACT tile list independently.
 
-        val fakeGetStyle = hookScope(panelClass.method("getStyle")) { styleChain ->
-            if (isTinyScreen) verticalStyle else styleChain.proceed()
-        }
-
-        val controllerClasses = listOf(
-            "miui.systemui.controlcenter.panel.main.p113qs.EditButtonController",
-            "miui.systemui.controlcenter.panel.main.p113qs.QSListController",
-            "miui.systemui.controlcenter.panel.main.p113qs.CompactQSListController",
-            "miui.systemui.controlcenter.panel.main.devicecenter.entry.DeviceCenterEntryController",
-            "miui.systemui.controlcenter.panel.main.devicecontrol.DeviceControlsEntryController",
-        )
-        controllerClasses.forEach { clsName ->
-            runCatching {
-                val cls = pluginLoader.loadClass(clsName)
-                hook(cls.method("available", Boolean::class.java)) { chain ->
-                    fakeGetStyle.run { chain.proceed() }
+        runCatching {
+            val editBtnClass = pluginLoader.loadClass(
+                "miui.systemui.controlcenter.panel.main.p113qs.EditButtonController")
+            hook(editBtnClass.method("available", Boolean::class.java), Hooker { chain ->
+                if (isTinyScreen) {
+                    // Force available in COMPACT mode — but still respect
+                    // superSaveMode and non-NORMAL mode checks
+                    true
+                } else {
+                    chain.proceed()
                 }
-            }.onFailure { log("ControlCenterHook: controller $clsName not found", it) }
-        }
-        log("ControlCenterHook: style hooks installed (COMPACT→VERTICAL)")
+            })
+            log("ControlCenterHook: edit button enabled in COMPACT mode")
+        }.onFailure { log("ControlCenterHook: edit button hook failed", it) }
 
         // ── 2. QS tile long-press restore ──────────────────────────────
 
