@@ -3,6 +3,7 @@ package com.example.flipunlock
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.aod.AodHook
 import com.example.flipunlock.hook.fliphome.RecentsCacheFix
+import com.example.flipunlock.hook.fliphome.RecentsMenuHook
 import com.example.flipunlock.hook.fliphome.WidgetRemove
 import com.example.flipunlock.hook.fliphome.WidgetTouchPassthrough
 import com.example.flipunlock.hook.system_server.AppContinuity
@@ -33,8 +34,9 @@ class Main : XposedModule() {
     //     fires on firstPackage only).
     // ──────────────────────────────────────────────────────────────────
     private val packageHooks = listOf<BaseHook>(
-        // fliphome/ — widget overlay
+        // fliphome/ — widget overlay + recents menu
         WidgetRemove,                   // widget overlay complete removal (refreshWindow ADD→REMOVE) — confirmed working
+        RecentsMenuHook,                // recents task long-press menu (lock/unlock + app info)
         // RecentsCacheFix,              // TODO: hook installed but effect not verified — needs further debugging
         // WidgetTouchPassthrough,      // FLAG_NOT_TOUCHABLE verified applied via dumpsys, yet touches are STILL
         //                              // intercepted → a second MIUI input mechanism reserves the region while the
