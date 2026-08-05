@@ -5,16 +5,17 @@ import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
- * Expand status bar notification icon limit on the outer screen.
+ * Fix SystemUI tiny screen behavior on the outer screen.
  *
- * On flip devices, SystemUI reduces NotificationIconContainer.mMaxIcons on
- * tiny screen, clipping notification icons to fewer than normal.
+ * On flip devices, MiuiConfigs.isTinyScreen() returns true on the outer screen,
+ * causing: notification icon clipping, modal long-press menu replacing normal
+ * menu, carrier text hidden, control center layout changes, etc.
  *
  * Fix:
- *   Hook #1: setMaxIconsAmount(int) → force Integer.MAX_VALUE
- *            Prevents any code path from reducing the icon limit.
- *   Hook #2: calculateIconXTranslations() after-hook → defense-in-depth,
- *            ensures mMaxIcons is MAX_VALUE before layout calculation.
+ *   Hook #1: MiuiConfigs.isTinyScreen(Context) → false
+ *            ROOT hook — covers isFlipTinyScreen + isTinyScreenLandscape too.
+ *   Hook #2: setMaxIconsAmount(int) → force Integer.MAX_VALUE (defense)
+ *   Hook #3: calculateIconXTranslations() after → mMaxIcons defense (defense)
  *
  * Process: systemui
  */
@@ -35,6 +36,7 @@ object StatusBarHook : BaseHook() {
         }
 
         safeHook("StatusBarHook") {
+            hookIsTinyScreen(param.classLoader)
             hookSetMaxIcons(param.classLoader)
             hookCalculateIcons(param.classLoader)
         }
@@ -45,7 +47,17 @@ object StatusBarHook : BaseHook() {
         at.getMethod("currentProcessName").invoke(null) as? String
     }.getOrNull()
 
-    // ── #1 setMaxIconsAmount(int) → force MAX_VALUE ──
+    // ── #1 MiuiConfigs.isTinyScreen(Context) → false (ROOT) ──
+    private fun hookIsTinyScreen(classLoader: ClassLoader) {
+        runCatching {
+            val cls = classLoader.loadClass("com.miui.utils.configs.MiuiConfigs")
+            val method = cls.method("isTinyScreen", android.content.Context::class.java)
+            hook(method, replaceResult(false))
+            log("StatusBarHook: MiuiConfigs.isTinyScreen → false")
+        }.onFailure { log("StatusBarHook: isTinyScreen hook failed", it) }
+    }
+
+    // ── #2 setMaxIconsAmount(int) → force MAX_VALUE (defense) ──
     private fun hookSetMaxIcons(classLoader: ClassLoader) {
         runCatching {
             val cls = classLoader.loadClass(
@@ -58,7 +70,7 @@ object StatusBarHook : BaseHook() {
         }.onFailure { log("StatusBarHook: setMaxIconsAmount hook failed", it) }
     }
 
-    // ── #2 calculateIconXTranslations() after → ensure mMaxIcons = MAX_VALUE ──
+    // ── #3 calculateIconXTranslations() after → ensure mMaxIcons = MAX_VALUE (defense) ──
     private fun hookCalculateIcons(classLoader: ClassLoader) {
         runCatching {
             val cls = classLoader.loadClass(

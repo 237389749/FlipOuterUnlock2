@@ -34,7 +34,8 @@
 **SystemUI**
 - Bypass flashlight flip-to-turn-on prompt
 - Control center compact mode fix — restore QS tile editing
-- Notification icon limit expansion — prevent icon clipping on outer screen
+- Global `isTinyScreen→false` — fix modal menu, icon clipping, carrier text, control center layout
+- Notification icon limit expansion — defense-in-depth for icon clipping
 
 **fliphome**
 - Widget overlay removal
@@ -67,7 +68,7 @@ onPackageReady:
 ├── AodHook [aod]                 ← outer screen AOD enable
 ├── FlashlightHook [systemui]     ← flashlight flip prompt bypass
 ├── ControlCenterHook [systemui]  ← control center compact fix
-├── StatusBarHook [systemui]      ← notification icon limit expansion
+├── StatusBarHook [systemui]      ← isTinyScreen→false + icon limit expansion
 └── SogouInputHook [sogou]        ← Sogou toolbar + clipboard fix (DexKit)
 ```
 
@@ -151,7 +152,8 @@ AGPL-3.0
 **SystemUI**
 - 手电筒翻转提示绕过
 - 控制中心紧凑模式修复 — 恢复 QS tile 编辑功能
-- 通知图标数量扩展 — 防止外屏通知图标被截断
+- 全局 `isTinyScreen→false` — 修复 modal 菜单、图标截断、运营商文本、控制中心布局
+- 通知图标数量扩展 — 防御性兜底
 
 **fliphome**
 - 小部件覆盖层移除
@@ -184,7 +186,7 @@ onPackageReady:
 ├── AodHook [aod]                 ← 外屏 AOD 启用
 ├── FlashlightHook [systemui]     ← 手电筒翻转提示绕过
 ├── ControlCenterHook [systemui]  ← 控制中心紧凑模式修复
-├── StatusBarHook [systemui]      ← 通知图标数量扩展
+├── StatusBarHook [systemui]      ← isTinyScreen→false + 图标数量扩展
 └── SogouInputHook [sogou]        ← 搜狗 toolbar + 剪贴板修复 (DexKit)
 ```
 
