@@ -20,6 +20,7 @@
 
 **Device Identity**
 - Spoof device type — hook 7 detection groups: `MiuiMultiDisplayTypeInfo`, `miui.os.Build`, `miuix.os.Build` (incl. `IS_FOLD_INSIDE/OUTSIDE` static field clearing), `DeviceUtils`, `DeviceHelper`, `MiuiConfigs`, defensive static field clearing. Excludes SystemUI and Sogou IME
+- Screen type spoof — `Configuration.getScreenType() → 0` (EXPAND), makes all processes believe they run on the primary screen
 
 **App Management**
 - Remove outer screen app launch restrictions
@@ -63,6 +64,7 @@ onSystemServerStarting (system_server):
 onPackageReady:
 ├── AppFullscreen.hookApp (#5-#6) ← app-side size-compat disable (excl. SystemUI, Sogou)
 ├── DeviceIdentityHook [*]        ← device identity spoof (7 hook groups, excl. SystemUI, Sogou)
+├── ScreenTypeHook [*]            ← Configuration.getScreenType → 0 (EXPAND)
 ├── WidgetRemove [fliphome]       ← widget overlay removal
 ├── RecentsCacheFix [fliphome]    ← recents cache refresh
 ├── AodHook [aod]                 ← outer screen AOD enable
@@ -138,6 +140,7 @@ AGPL-3.0
 
 **设备身份**
 - 伪装设备类型 — hook 7 组检测路径：`MiuiMultiDisplayTypeInfo`、`miui.os.Build`、`miuix.os.Build`（含 `IS_FOLD_INSIDE/OUTSIDE` 静态字段清除）、`DeviceUtils`、`DeviceHelper`、`MiuiConfigs`、防御性静态字段清除。排除 SystemUI 和 Sogou
+- 伪装屏幕类型 — `Configuration.getScreenType() → 0`（EXPAND），让所有进程认为自己在主屏运行
 
 **应用管理**
 - 去除外屏应用启动限制
@@ -181,6 +184,7 @@ onSystemServerStarting (system_server):
 onPackageReady:
 ├── AppFullscreen.hookApp (#5-#6) ← app 端 size-compat 关闭 (排除 SystemUI, Sogou)
 ├── DeviceIdentityHook [*]        ← 设备身份伪造 (7 hook 组, 排除 SystemUI, Sogou)
+├── ScreenTypeHook [*]            ← Configuration.getScreenType → 0 (EXPAND)
 ├── WidgetRemove [fliphome]       ← 小部件覆盖移除
 ├── RecentsCacheFix [fliphome]    ← 最近任务缓存刷新
 ├── AodHook [aod]                 ← 外屏 AOD 启用
