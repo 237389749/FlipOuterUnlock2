@@ -1,6 +1,7 @@
 package com.example.flipunlock.hook.system_server
 
 import com.example.flipunlock.hook.util.*
+import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 
 /**
@@ -43,7 +44,7 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  * the canUseFixedAspectRatio block, so on the inner screen this is a no-op too.
  *
  * Toggle: persist.flipunlock.display.fullscreen (default true)
- * Process: system_server
+ * Process: system_server (#1-#4) + app processes (#5-#6)
  */
 object AppFullscreen {
 
@@ -115,5 +116,41 @@ object AppFullscreen {
             hook(method, replaceResult(1.0f))
             log("AppFullscreen: getGlobalScale → 1.0f (no scale)")
         }.onFailure { log("AppFullscreen: getGlobalScale hook failed", it) }
+    }
+
+    // ── App-process hooks (#5-#6): disable MIUI size-compat inside the app ──
+    // system_server hooks (#1-#4) tell WMS "this app wants fullscreen".
+    // These app-side hooks tell the app itself "you are NOT in size-compat mode",
+    // preventing applyViewLocation() view shifts and DecorView inset changes
+    // that cause black status bar areas.
+
+    /** Called from onPackageReady for app processes. */
+    fun hookApp(param: PackageReadyParam) {
+        if (!Config.displayFullscreen) return
+        if (param.packageName in Exclusions.DEVICE_IDENTITY) return
+        safeHook("AppFullscreen") {
+            hookSizeCompatScaleMode(param.classLoader)
+            hookSizeCompatBounds(param.classLoader)
+        }
+    }
+
+    // ── #5 ActivityThreadImpl.inMiuiSizeCompatScaleMode() → false ──
+    private fun hookSizeCompatScaleMode(classLoader: ClassLoader) {
+        runCatching {
+            val cls = classLoader.loadClass("android.app.ActivityThreadImpl")
+            val method = cls.method("inMiuiSizeCompatScaleMode")
+            hook(method, replaceResult(false))
+            log("AppFullscreen: inMiuiSizeCompatScaleMode → false")
+        }.onFailure { log("AppFullscreen: inMiuiSizeCompatScaleMode hook failed", it) }
+    }
+
+    // ── #6 ActivityThreadImpl.getSizeCompatBounds() → null ──
+    private fun hookSizeCompatBounds(classLoader: ClassLoader) {
+        runCatching {
+            val cls = classLoader.loadClass("android.app.ActivityThreadImpl")
+            val method = cls.method("getSizeCompatBounds")
+            hook(method, replaceResult(null))
+            log("AppFullscreen: getSizeCompatBounds → null")
+        }.onFailure { log("AppFullscreen: getSizeCompatBounds hook failed", it) }
     }
 }

@@ -76,6 +76,8 @@ class Main : XposedModule() {
             log("Main: loading CutoutRemove.hookApp for camera (real cutout preserved)")
             CutoutRemove.hookApp(param)
         }
+        // App-side size-compat disable (complements AppFullscreen system_server hooks)
+        AppFullscreen.hookApp(param)
         packageHooks.forEach { hook ->
             val isWildcard = hook.targetPackages.contains("*")
             val isTargeted = hook.targetPackages.contains(param.packageName)
