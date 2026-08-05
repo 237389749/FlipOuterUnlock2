@@ -64,7 +64,7 @@ object StatusBarHook : BaseHook() {
                 "com.android.systemui.statusbar.phone.NotificationIconContainer")
             val method = cls.method("setMaxIconsAmount", Int::class.javaPrimitiveType!!)
             hook(method) { chain ->
-                chain.proceed(Integer.MAX_VALUE)
+                chain.proceed(arrayOf(Integer.MAX_VALUE))
             }
             log("StatusBarHook: setMaxIconsAmount → MAX_VALUE")
         }.onFailure { log("StatusBarHook: setMaxIconsAmount hook failed", it) }
