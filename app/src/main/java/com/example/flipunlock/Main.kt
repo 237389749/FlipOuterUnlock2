@@ -14,6 +14,7 @@ import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.system_server.SubScreenGesture
 import com.example.flipunlock.hook.systemui.ControlCenterHook
 import com.example.flipunlock.hook.systemui.FlashlightHook
+import com.example.flipunlock.hook.systemui.StatusBarHook
 import com.example.flipunlock.hook.system_server.InputMethodHook
 import com.example.flipunlock.hook.ime.SogouInputHook
 import com.example.flipunlock.hook.util.Config
@@ -47,6 +48,7 @@ class Main : XposedModule() {
         // systemui/ — SystemUI process hooks
         FlashlightHook,                 // bypass "flip to turn on flashlight" on outer screen
         ControlCenterHook,              // restore normal (non-compact) control center style
+        StatusBarHook,                  // expand notification icon limit on outer screen
         // ime/ — Sogou IME process
         SogouInputHook,                 // IME toolbar + clipboard fix (DexKit)
     )
