@@ -5,22 +5,17 @@ import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
- * Fix SystemUI tiny screen behavior + immersive status bar on the outer screen.
+ * Fix SystemUI tiny screen behavior on the outer screen.
  *
  * On flip devices, MiuiConfigs.isTinyScreen() returns true on the outer screen,
  * causing: notification icon clipping, modal long-press menu replacing normal
  * menu, carrier text hidden, control center layout changes, etc.
- *
- * Additionally, the status bar reserves vertical space on the outer screen,
- * reducing usable area. Hooking SystemBarUtils.getStatusBarHeight() → 0 makes
- * the status bar immersive (content draws behind it).
  *
  * Fix:
  *   Hook #1: MiuiConfigs.isTinyScreen(Context) → false
  *            ROOT hook — covers isFlipTinyScreen + isTinyScreenLandscape too.
  *   Hook #2: setMaxIconsAmount(int) → force Integer.MAX_VALUE (defense)
  *   Hook #3: calculateIconXTranslations() after → mMaxIcons defense (defense)
- *   Hook #4: SystemBarUtils.getStatusBarHeight() → 0 (immersive status bar)
  *
  * Process: systemui
  */
@@ -44,7 +39,6 @@ object StatusBarHook : BaseHook() {
             hookIsTinyScreen(param.classLoader)
             hookSetMaxIcons(param.classLoader)
             hookCalculateIcons(param.classLoader)
-            hookStatusBarHeight(param.classLoader)
         }
     }
 
@@ -88,19 +82,5 @@ object StatusBarHook : BaseHook() {
             })
             log("StatusBarHook: calculateIconXTranslations → mMaxIcons defense")
         }.onFailure { log("StatusBarHook: calculateIconXTranslations hook failed", it) }
-    }
-
-    // ── #4 SystemBarUtils.getStatusBarHeight() → 0 (immersive status bar) ──
-    // Makes the status bar transparent/zero-height so content extends behind it,
-    // maximizing usable vertical space on the small outer screen.
-    private fun hookStatusBarHeight(classLoader: ClassLoader) {
-        runCatching {
-            val cls = classLoader.loadClass("com.android.internal.policy.SystemBarUtils")
-            // getStatusBarHeight(Context)
-            hook(cls.method("getStatusBarHeight", android.content.Context::class.java), replaceResult(0))
-            // getStatusBarHeight(Resources, DisplayCutout)
-            hook(cls.method("getStatusBarHeight", android.content.res.Resources::class.java, android.view.DisplayCutout::class.java), replaceResult(0))
-            log("StatusBarHook: SystemBarUtils.getStatusBarHeight → 0 (immersive)")
-        }.onFailure { log("StatusBarHook: getStatusBarHeight hook failed", it) }
     }
 }
