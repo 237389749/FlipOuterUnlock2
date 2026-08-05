@@ -2,6 +2,7 @@ package com.example.flipunlock
 
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.aod.AodHook
+import com.example.flipunlock.hook.identity.DeviceIdentityHook
 import com.example.flipunlock.hook.fliphome.RecentsCacheFix
 import com.example.flipunlock.hook.fliphome.WidgetRemove
 import com.example.flipunlock.hook.fliphome.WidgetTouchPassthrough
@@ -33,6 +34,8 @@ class Main : XposedModule() {
     //     fires on firstPackage only).
     // ──────────────────────────────────────────────────────────────────
     private val packageHooks = listOf<BaseHook>(
+        // identity/ — device type spoofing (ROOT HOOK, must be first)
+        DeviceIdentityHook,               // isFlipDevice/isFoldDevice/isTinyScreen → false, static field clearing
         // fliphome/ — widget overlay
         WidgetRemove,                   // widget overlay complete removal (refreshWindow ADD→REMOVE) — confirmed working
         RecentsCacheFix,                // force fresh recents load every time (getTaskLoadPlan → null)
