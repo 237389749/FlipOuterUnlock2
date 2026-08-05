@@ -36,6 +36,7 @@
 - Bypass flashlight flip-to-turn-on prompt
 - Control center compact mode fix — restore QS tile editing
 - Global `isTinyScreen→false` — fix modal menu, icon clipping, carrier text, control center layout
+- Immersive status bar — `SystemBarUtils.getStatusBarHeight() → 0`, content extends behind status bar
 - Notification icon limit expansion — defense-in-depth for icon clipping
 
 **fliphome**
@@ -70,7 +71,7 @@ onPackageReady:
 ├── AodHook [aod]                 ← outer screen AOD enable
 ├── FlashlightHook [systemui]     ← flashlight flip prompt bypass
 ├── ControlCenterHook [systemui]  ← control center compact fix
-├── StatusBarHook [systemui]      ← isTinyScreen→false + icon limit expansion
+├── StatusBarHook [systemui]      ← isTinyScreen→false + immersive status bar + icon limit
 └── SogouInputHook [sogou]        ← Sogou toolbar + clipboard fix (DexKit)
 ```
 
@@ -156,6 +157,7 @@ AGPL-3.0
 - 手电筒翻转提示绕过
 - 控制中心紧凑模式修复 — 恢复 QS tile 编辑功能
 - 全局 `isTinyScreen→false` — 修复 modal 菜单、图标截断、运营商文本、控制中心布局
+- 沉浸式状态栏 — `SystemBarUtils.getStatusBarHeight() → 0`，内容延伸到状态栏后方
 - 通知图标数量扩展 — 防御性兜底
 
 **fliphome**
@@ -190,7 +192,7 @@ onPackageReady:
 ├── AodHook [aod]                 ← 外屏 AOD 启用
 ├── FlashlightHook [systemui]     ← 手电筒翻转提示绕过
 ├── ControlCenterHook [systemui]  ← 控制中心紧凑模式修复
-├── StatusBarHook [systemui]      ← isTinyScreen→false + 图标数量扩展
+├── StatusBarHook [systemui]      ← isTinyScreen→false + 沉浸式状态栏 + 图标数量扩展
 └── SogouInputHook [sogou]        ← 搜狗 toolbar + 剪贴板修复 (DexKit)
 ```
 
