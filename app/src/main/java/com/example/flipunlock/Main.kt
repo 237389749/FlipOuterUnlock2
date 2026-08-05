@@ -41,7 +41,7 @@ class Main : XposedModule() {
         ScreenTypeHook,                   // Configuration.getScreenType → 0 (EXPAND)
         // fliphome/ — widget overlay
         WidgetRemove,                   // widget overlay complete removal (refreshWindow ADD→REMOVE) — confirmed working
-        RecentsCacheFix,                // force fresh recents load every time (getTaskLoadPlan → null)
+        RecentsCacheFix,                // force fresh recents load every time (getSmartRecentsTaskLoadPlan → clear cache)
         // WidgetTouchPassthrough,      // FLAG_NOT_TOUCHABLE verified applied via dumpsys, yet touches are STILL
         //                              // intercepted → a second MIUI input mechanism reserves the region while the
         //                              // overlay window exists; flag-only passthrough is insufficient. Kept for reference.

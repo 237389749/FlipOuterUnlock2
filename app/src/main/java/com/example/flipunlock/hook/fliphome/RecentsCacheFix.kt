@@ -2,6 +2,7 @@ package com.example.flipunlock.hook.fliphome
 
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.util.*
+import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
@@ -12,16 +13,14 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  * (blur/lock state refresh) — it does NOT reload the task list from the system.
  * If new tasks were created after the background preload, they won't appear.
  *
- * Previous approach (failed): clear cache in OverviewState.onStateEnabled() —
- *   only covered the OverviewState entry path, missed gesture-based entry and
- *   background preload could re-populate the cache before loadTaskStack().
+ * Previous approach (failed): hook getTaskLoadPlan() → return null.
+ *   getTaskLoadPlan() is a trivial getter (return mRecentsTaskLoadPlan) that R8
+ *   inlines into callers — the hook never fires (Pitfall #7: R8 inlining).
  *
- * New approach: hook getTaskLoadPlan() → always return null.
- *   This forces getSmartRecentsTaskLoadPlan() to always take the null branch:
- *     if (taskLoadPlan == null) {
- *         taskLoadPlan = taskLoader.createLoadPlan(context);  // fresh data
- *     }
- *   Works regardless of entry path (OverviewState, gesture, preload).
+ * New approach: hook getSmartRecentsTaskLoadPlan(Context, int) — the complex
+ *   orchestrator method that won't be inlined. Clear the cache via
+ *   clearRecentsTaskLoadPlan() before proceeding, forcing a fresh plan with
+ *   preloadTasks() (full system task list reload).
  *
  * Process: com.miui.fliphome
  */
@@ -33,9 +32,18 @@ object RecentsCacheFix : BaseHook() {
         safeHook("RecentsCacheFix") {
             val recentsModelClass = param.classLoader.loadClass(
                 "com.miui.fliphome.recents.RecentsModel")
-            val getTaskLoadPlan = recentsModelClass.method("getTaskLoadPlan")
-            hook(getTaskLoadPlan, replaceResult(null))
-            log("RecentsCacheFix: getTaskLoadPlan() → null (force fresh load every time)")
+            val getSmartPlan = recentsModelClass.method(
+                "getSmartRecentsTaskLoadPlan",
+                android.content.Context::class.java,
+                Int::class.javaPrimitiveType!!)
+            hook(getSmartPlan, Hooker { chain ->
+                // Clear cached plan so the original method takes the null branch:
+                //   taskLoadPlan == null → createLoadPlan() → preloadTasks() (full reload)
+                chain.thisObject.callMethod("clearRecentsTaskLoadPlan")
+                log("RecentsCacheFix: cache cleared before getSmartRecentsTaskLoadPlan")
+                chain.proceed()
+            })
+            log("RecentsCacheFix: getSmartRecentsTaskLoadPlan hooked → fresh load every time")
         }
     }
 }
