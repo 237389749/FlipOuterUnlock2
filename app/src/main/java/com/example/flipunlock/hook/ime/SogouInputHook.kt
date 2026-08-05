@@ -54,26 +54,19 @@ object SogouInputHook : BaseHook() {
         return found ?: error("isFlipScreen not found")
     }
 
-    private fun hookWithFakeFlipScreen(
-        target: Method,
-        fakeFlipScreen: HookScope,
-        after: ((Any?) -> Any?)? = null,
-    ) {
-        hook(target) { chain ->
-            val result = fakeFlipScreen.run { chain.proceed() }
-            after?.invoke(result) ?: result
-        }
-    }
-
     // ── Toolbar fix ────────────────────────────────────────────────────
 
     private fun hookToolbarFix(param: PackageReadyParam) {
         createDexKitBridge(param.classLoader).use { bridge ->
             val managerClass = findManagerClass(bridge, param.classLoader)
             val isFlipScreen = findIsFlipScreen(bridge, param.classLoader, managerClass)
-            val fakeFlipScreen = hookScope(isFlipScreen) { false }
+            // isFlipScreen IS m44475j() on FlipScreenManager — all callers (interface
+            // and direct) go through this single method.
+            val fakeFalse = hookScope(isFlipScreen) { false }
+            val fakeTrue  = hookScope(isFlipScreen) { true }
 
-            // buildFunctionList: calls getFlipOrderList + isFlipScreen
+            // buildFunctionList (m37421q): calls getFlipOrderList + isFlipScreen
+            //   Fake false → isFlipScreen()=false → skip getFlipOrderList → use default list
             val buildFunctionList = bridge.findMethod {
                 matcher {
                     invokeMethods {
@@ -84,30 +77,28 @@ object SogouInputHook : BaseHook() {
             }.singleOrNull()?.getMethodInstance(param.classLoader)
                 ?: error("buildFunctionList not found")
 
-            // getSingleton: static, returns managerClass, 0 params
-            val getSingleton = managerClass.declaredMethods.firstOrNull { m ->
-                Modifier.isStatic(m.modifiers) && m.returnType == managerClass && m.parameterCount == 0
-            } ?: error("getSingleton not found")
-
-            hookWithFakeFlipScreen(buildFunctionList, fakeFlipScreen) { result ->
+            hook(buildFunctionList) { chain ->
+                val result = fakeFalse.run { chain.proceed() }
+                // fakeFalse makes isFlipScreen()=false → skip getFlipOrderList → default list
+                // Always remove items 6, 1052 from the result (they're in the default list)
                 runCatching {
-                    if (isFlipScreen.invoke(getSingleton.invoke(null)) as Boolean) {
-                        @Suppress("UNCHECKED_CAST")
-                        val list = result as? ArrayList<Any>
-                        if (!list.isNullOrEmpty()) {
-                            val idField = runCatching {
-                                list[0].javaClass.getDeclaredField("f").also { it.isAccessible = true }
-                            }.onFailure { log("SogouFix: toolbar idField lookup failed", it) }.getOrNull()
-                            if (idField != null) {
-                                list.removeIf { item -> idField.get(item) as? Int in listOf(6, 1052) }
-                            }
+                    @Suppress("UNCHECKED_CAST")
+                    val list = result as? ArrayList<Any>
+                    if (!list.isNullOrEmpty()) {
+                        val idField = findItemIdField(list[0].javaClass)
+                        if (idField != null) {
+                            list.removeIf { item -> idField.get(item) as? Int in listOf(6, 1052) }
                         }
                     }
                 }.onFailure { log("SogouFix: hookToolbarFix after failed", it) }
                 result
             }
 
-            // refreshFunctionList: calls isUpdateFlipImeFunction, same declaring class as buildFunctionList
+            // refreshFunctionList (m37390G): NEW VERSION calls m44475j() directly
+            //   (not isFlipScreen() interface method).
+            //   Logic: if (!m7819t8() || m44475j()) → m37387D() [default list]
+            //          else → m37391H() [user-customized list — may contain items 6, 1052]
+            //   Fake TRUE → m44475j()=true → always takes default list path.
             val refreshFunctionList = bridge.findMethod {
                 matcher {
                     declaredClass(buildFunctionList.declaringClass.name)
@@ -116,8 +107,27 @@ object SogouInputHook : BaseHook() {
             }.singleOrNull()?.getMethodInstance(param.classLoader)
                 ?: error("refreshFunctionList not found")
 
-            hookWithFakeFlipScreen(refreshFunctionList, fakeFlipScreen)
-            log("SogouFix: toolbar fix hooked")
+            hook(refreshFunctionList) { chain -> fakeTrue.run { chain.proceed() } }
+            log("SogouFix: toolbar fix hooked (buildFunctionList fake=false, refreshFunctionList fake=true)")
+        }
+    }
+
+    /**
+     * Find the int field that holds the toolbar item ID.
+     * In the new version this is C12755f.a.f55326f (renamed from "f").
+     * Falls back to the first int field if "f" is not found.
+     */
+    private fun findItemIdField(clazz: Class<*>): java.lang.reflect.Field? {
+        return runCatching {
+            clazz.getDeclaredField("f").also { it.isAccessible = true }
+        }.getOrElse {
+            // Fallback: find any int field (the item ID is the only int in the toolbar item class)
+            clazz.declaredFields.firstOrNull { f ->
+                f.type == Int::class.javaPrimitiveType && !Modifier.isStatic(f.modifiers)
+            }?.also {
+                it.isAccessible = true
+                log("SogouFix: field 'f' not found, using fallback field '${it.name}'")
+            }
         }
     }
 
