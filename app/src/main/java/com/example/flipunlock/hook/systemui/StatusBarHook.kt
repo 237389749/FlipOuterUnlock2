@@ -5,22 +5,17 @@ import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
- * Fix SystemUI tiny screen behavior + immersive status bar on the outer screen.
+ * Fix SystemUI tiny screen behavior on the outer screen.
  *
  * On flip devices, MiuiConfigs.isTinyScreen() returns true on the outer screen,
  * causing: notification icon clipping, modal long-press menu replacing normal
  * menu, carrier text hidden, control center layout changes, etc.
- *
- * Additionally, the status bar background is made transparent (immersive) so
- * the visual bar doesn't consume vertical space on the small outer screen.
- * Height is preserved to keep the notification panel pull-down working.
  *
  * Fix:
  *   Hook #1: MiuiConfigs.isTinyScreen(Context) → false
  *            ROOT hook — covers isFlipTinyScreen + isTinyScreenLandscape too.
  *   Hook #2: setMaxIconsAmount(int) → force Integer.MAX_VALUE (defense)
  *   Hook #3: calculateIconXTranslations() after → mMaxIcons defense (defense)
- *   Hook #4: BarTransitions.applyModeBackground → force MODE_TRANSPARENT (0)
  *
  * Process: systemui
  */
@@ -44,7 +39,6 @@ object StatusBarHook : BaseHook() {
             hookIsTinyScreen(param.classLoader)
             hookSetMaxIcons(param.classLoader)
             hookCalculateIcons(param.classLoader)
-            hookStatusBarBackground(param.classLoader)
         }
     }
 
@@ -90,17 +84,4 @@ object StatusBarHook : BaseHook() {
         }.onFailure { log("StatusBarHook: calculateIconXTranslations hook failed", it) }
     }
 
-    // ── #4 BarTransitions.applyModeBackground → MODE_TRANSPARENT (0) ──
-    // Forces the status bar background to be transparent while preserving
-    // the height, so the notification panel pull-down still works.
-    private fun hookStatusBarBackground(classLoader: ClassLoader) {
-        runCatching {
-            val cls = classLoader.loadClass("com.android.systemui.shared.statusbar.phone.BarTransitions")
-            val method = cls.method("applyModeBackground", Int::class.javaPrimitiveType!!, Boolean::class.javaPrimitiveType!!)
-            hook(method) { chain ->
-                chain.proceed(arrayOf(0, chain.args[1]))  // force mode=0 (MODE_TRANSPARENT)
-            }
-            log("StatusBarHook: BarTransitions.applyModeBackground → MODE_TRANSPARENT")
-        }.onFailure { log("StatusBarHook: applyModeBackground hook failed", it) }
-    }
 }
