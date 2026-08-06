@@ -22,6 +22,9 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  * Hook #2 (Display.getCutout(), camera): return valid DisplayCutout (zero insets + zero bounds).
  * Hook #3 (DisplayCutout.getBoundingRect*, camera): return empty Rect (defense).
  * Hook #4 (getLayoutInDisplayCutoutMode → ALWAYS): defense-in-depth.
+ * Hook #5 (InsetsState.getDisplayCutoutSafe → full bounds): fix cached boot-time cutout
+ *   in global InsetsState that Parser.parse cannot reach. Without this, computeFrames()
+ *   narrows parent frame to 810px → toast/keyboard shifted left.
  *
  * Toggle: persist.flipunlock.display.cutout (default true)
  */
@@ -36,6 +39,7 @@ object CutoutRemove {
         safeHook("CutoutRemove") {
             hookCutoutParser(param.classLoader)
             forceCutoutModeAlways(param.classLoader)
+            hookGetDisplayCutoutSafe(param.classLoader)
         }
     }
 
@@ -138,5 +142,26 @@ object CutoutRemove {
             hook(method, replaceResult(3))
             log("CutoutRemove: getLayoutInDisplayCutoutMode → ALWAYS (3)")
         }.onFailure { log("CutoutRemove: getLayoutInDisplayCutoutMode hook failed", it) }
+    }
+
+    // ── #5 InsetsState.getDisplayCutoutSafe(Rect) → full bounds ──
+    //    The global InsetsState is constructed at boot BEFORE our hooks load.
+    //    Its mDisplayCutout supplier returns the boot-time real cutout.
+    //    Parser.parse() zeros NEW specs but cannot fix the already-cached InsetsState.
+    //    computeFrames() calls getDisplayCutoutSafe() → narrows parent frame to 810px
+    //    → Gravity.CENTER_HORIZONTAL centers within 810px (shifted ~199px left).
+    //    Fix: after original method runs, restore outBounds to full (-100000..100000).
+    //    refMD: DisplayCutout.md §18
+    private fun hookGetDisplayCutoutSafe(classLoader: ClassLoader) {
+        runCatching {
+            val cls = classLoader.loadClass("android.view.InsetsState")
+            val method = cls.method("getDisplayCutoutSafe", Rect::class.java)
+            hook(method, after { chain, _ ->
+                val outBounds = chain.args[0] as? Rect
+                outBounds?.set(-100000, -100000, 100000, 100000)
+                null
+            })
+            log("CutoutRemove: InsetsState.getDisplayCutoutSafe → full bounds")
+        }.onFailure { log("CutoutRemove: getDisplayCutoutSafe hook failed", it) }
     }
 }
