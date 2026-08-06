@@ -22,12 +22,6 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  * Hook #2 (Display.getCutout(), camera): return valid DisplayCutout (zero insets + zero bounds).
  * Hook #3 (DisplayCutout.getBoundingRect*, camera): return empty Rect (defense).
  * Hook #4 (getLayoutInDisplayCutoutMode → ALWAYS): defense-in-depth.
- * Hook #5 (InsetsState.getDisplayCutoutSafe → full bounds): fix cached boot-time cutout
- *   in global InsetsState that Parser.parse cannot reach. Without this, computeFrames()
- *   narrows parent frame to 810px → toast/keyboard shifted left.
- * Hook #6 (calculateDisplayCutoutForRotation → NO_CUTOUT): prevent rotation from
- *   recreating cutout via RotationCache (bypasses Parser.parse).
- *   refMD: DisplayCutout.md §17, §19
  *
  * Toggle: persist.flipunlock.display.cutout (default true)
  */
@@ -42,8 +36,6 @@ object CutoutRemove {
         safeHook("CutoutRemove") {
             hookCutoutParser(param.classLoader)
             forceCutoutModeAlways(param.classLoader)
-            hookGetDisplayCutoutSafe(param.classLoader)
-            hookCalculateDisplayCutoutForRotation(param.classLoader)
         }
     }
 
@@ -146,49 +138,5 @@ object CutoutRemove {
             hook(method, replaceResult(3))
             log("CutoutRemove: getLayoutInDisplayCutoutMode → ALWAYS (3)")
         }.onFailure { log("CutoutRemove: getLayoutInDisplayCutoutMode hook failed", it) }
-    }
-
-    // ── #6 DisplayContent.calculateDisplayCutoutForRotation → NO_CUTOUT ──
-    //    Rotation events trigger updateDisplayAndOrientation() which calls
-    //    calculateDisplayCutoutForRotation(). This method uses RotationCache
-    //    that may return pre-cached real cutout WITHOUT going through
-    //    pathAndDisplayCutoutFromSpec → Parser.parse() hook is bypassed.
-    //    Fix: return NO_CUTOUT unconditionally to prevent cutout recreation.
-    //    refMD: DisplayCutout.md §17, §19
-    private fun hookCalculateDisplayCutoutForRotation(classLoader: ClassLoader) {
-        runCatching {
-            val dcClass = classLoader.loadClass("com.android.server.wm.DisplayContent")
-            val method = dcClass.getDeclaredMethod(
-                "calculateDisplayCutoutForRotation",
-                Int::class.javaPrimitiveType!!)
-            method.isAccessible = true
-            val displayCutoutClass = classLoader.loadClass("android.view.DisplayCutout")
-            val noCutoutField = displayCutoutClass.getDeclaredField("NO_CUTOUT")
-            noCutoutField.isAccessible = true
-            val noCutout = noCutoutField.get(null)
-            hook(method, replaceResult(noCutout))
-            log("CutoutRemove: calculateDisplayCutoutForRotation → NO_CUTOUT")
-        }.onFailure { log("CutoutRemove: calculateDisplayCutoutForRotation hook failed", it) }
-    }
-
-    // ── #5 InsetsState.getDisplayCutoutSafe(Rect) → full bounds ──
-    //    The global InsetsState is constructed at boot BEFORE our hooks load.
-    //    Its mDisplayCutout supplier returns the boot-time real cutout.
-    //    Parser.parse() zeros NEW specs but cannot fix the already-cached InsetsState.
-    //    computeFrames() calls getDisplayCutoutSafe() → narrows parent frame to 810px
-    //    → Gravity.CENTER_HORIZONTAL centers within 810px (shifted ~199px left).
-    //    Fix: after original method runs, restore outBounds to full (-100000..100000).
-    //    refMD: DisplayCutout.md §18
-    private fun hookGetDisplayCutoutSafe(classLoader: ClassLoader) {
-        runCatching {
-            val cls = classLoader.loadClass("android.view.InsetsState")
-            val method = cls.method("getDisplayCutoutSafe", Rect::class.java)
-            hook(method, after { chain, _ ->
-                val outBounds = chain.args[0] as? Rect
-                outBounds?.set(-100000, -100000, 100000, 100000)
-                null
-            })
-            log("CutoutRemove: InsetsState.getDisplayCutoutSafe → full bounds")
-        }.onFailure { log("CutoutRemove: getDisplayCutoutSafe hook failed", it) }
     }
 }

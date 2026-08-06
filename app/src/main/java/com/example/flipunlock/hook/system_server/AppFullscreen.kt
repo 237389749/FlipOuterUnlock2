@@ -59,7 +59,6 @@ object AppFullscreen {
             hookFlipCompatModeByActivity(param.classLoader)
             hookFullScreenValue(param.classLoader)
             hookGlobalScale(param.classLoader)
-            hookCompatGravity(param.classLoader)
         }
     }
 
@@ -119,28 +118,7 @@ object AppFullscreen {
         }.onFailure { log("AppFullscreen: getGlobalScale hook failed", it) }
     }
 
-    // ── #5 BoundsCompatUtils.getCompatGravity(DisplayCutout) → 0 ──
-    //    Reads INTERNAL DisplayCutout (not affected by Display.getCutout() API hook).
-    //    Checks cutout safe insets to choose gravity:
-    //      safeInsetRight>0 → LEFT gravity (3) → positionCompatBounds() shifts views left
-    //    By returning 0 (NO_GRAVITY), we prevent the cutout-based offset from entering
-    //    the compat bounds pipeline at its source.
-    //    refMD: Hook_Chain_Map.md §4, DisplayCutout.md §BoundsCompatUtils
-    private fun hookCompatGravity(classLoader: ClassLoader) {
-        runCatching {
-            val cls = classLoader.loadClass("com.android.server.wm.BoundsCompatUtils")
-            val method = cls.declaredMethods.firstOrNull {
-                it.name == "getCompatGravity" && it.parameterCount == 1
-            }
-            if (method != null) {
-                method.isAccessible = true
-                hook(method, replaceResult(0))
-                log("AppFullscreen: getCompatGravity → 0")
-            }
-        }.onFailure { log("AppFullscreen: getCompatGravity hook failed", it) }
-    }
-
-    // ── App-process hooks (#6-#7): disable MIUI size-compat inside the app ──
+    // ── App-process hooks (#5-#6): disable MIUI size-compat inside the app ──
     // system_server hooks (#1-#4) tell WMS "this app wants fullscreen".
     // These app-side hooks tell the app itself "you are NOT in size-compat mode",
     // preventing applyViewLocation() view shifts and DecorView inset changes
