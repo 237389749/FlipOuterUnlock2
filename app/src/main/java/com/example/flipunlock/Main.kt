@@ -59,9 +59,9 @@ class Main : XposedModule() {
     }
 
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
-        log("Main: onSystemServerStarting — minimal mode (DeviceIdentityHook + LauncherRouteHook)")
+        log("Main: onSystemServerStarting — minimal mode (DeviceIdentityHook + LauncherRouteHook + AppRestriction)")
         LauncherRouteHook.hook(param)      // updateHomeIntent displayID==5 bypass
-        // AppRestriction.hook(param)       // [OFF]
+        AppRestriction.hook(param)         // isInterceptListUnCheckFold → false (独立门，不受 isFlipDevice 影响)
         // AppWhitelist.hook(param)         // [OFF]
         // CutoutRemove.hook(param)         // [OFF]
         // AppFullscreen.hook(param)        // [OFF]
