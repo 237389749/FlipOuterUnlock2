@@ -19,8 +19,7 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  *     are untested and may cause side effects.
  *
  * Wildcard hook: fires on firstPackage only.
- * Excludes: SystemUI (lock screen layout), Sogou (keyboard height),
- *           fliphome (outer screen launcher init needs real identity).
+ * No exclusions — applies to ALL packages.
  */
 object DeviceIdentityHook : BaseHook() {
     override val targetPackages = listOf("*")
@@ -28,8 +27,6 @@ object DeviceIdentityHook : BaseHook() {
     @Volatile private var hooksInstalled = false
 
     override fun hook(param: PackageReadyParam) {
-        if (param.packageName in Exclusions.DEVICE_IDENTITY) return
-
         if (hooksInstalled) return
         hooksInstalled = true
 
