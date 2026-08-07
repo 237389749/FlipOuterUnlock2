@@ -16,9 +16,10 @@ object Exclusions {
 
     const val SYSTEMUI = "com.android.systemui"
     const val SOGOU_IME = "com.sohu.inputmethod.sogou.xiaomi"
+    const val FLIPHOME = "com.miui.fliphome"
 
     /** Packages that must see real flip identity (isFlipDevice, isTinyScreen, etc.) */
-    val DEVICE_IDENTITY = setOf(SYSTEMUI, SOGOU_IME)
+    val DEVICE_IDENTITY = setOf(SYSTEMUI, SOGOU_IME, FLIPHOME)
 
     /** Packages that must see real display cutout for correct layout */
     val GLOBAL_CUTOUT = setOf(SOGOU_IME)
