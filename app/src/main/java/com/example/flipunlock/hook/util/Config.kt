@@ -15,6 +15,7 @@ package com.example.flipunlock.hook.util
  *   setprop persist.flipunlock.app.continuity false      # app continuity (keep running app on fold)
  *   setprop persist.flipunlock.gesture.home false        # bottom gestures
  *   setprop persist.flipunlock.gesture.back false        # back gestures
+ *   setprop persist.flipunlock.gesture.bypass true       # legacy recents-anim bypass (diag first!)
  *   setprop persist.flipunlock.ui.lockscreen false       # lock screen layout
  *   setprop persist.flipunlock.ui.widget false           # disable widget overlay
  *   setprop persist.flipunlock.ui.controlcenter false    # control center restore
@@ -91,6 +92,7 @@ object Config {
         "persist.flipunlock.app.continuity",
         "persist.flipunlock.gesture.home",
         "persist.flipunlock.gesture.back",
+        "persist.flipunlock.gesture.bypass",
         "persist.flipunlock.ui.lockscreen",
         "persist.flipunlock.ui.widget",
         "persist.flipunlock.ui.controlcenter",
@@ -115,6 +117,11 @@ object Config {
     // Gesture — keep together
     val gestureHome: Boolean get() = enabled && raw("persist.flipunlock.gesture.home", true)
     val gestureBack: Boolean get() = enabled && raw("persist.flipunlock.gesture.back", true)
+    // Legacy recents-animation bypass (old project Gate 6). OFF by default:
+    // new topology (outer=display 0) should fix the Shell transition deadlock
+    // structurally (refMD §40) — enable only if LauncherHook diagnostics show
+    // msg 11 never arrives on the new firmware.
+    val gestureBypass: Boolean get() = enabled && raw("persist.flipunlock.gesture.bypass", false)
 
     // UI
     val uiLockScreen: Boolean get() = enabled && raw("persist.flipunlock.ui.lockscreen", true)

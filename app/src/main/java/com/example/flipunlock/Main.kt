@@ -20,6 +20,7 @@ import com.example.flipunlock.hook.systemui.FlashlightHook
 import com.example.flipunlock.hook.systemui.StatusBarHook
 import com.example.flipunlock.hook.system_server.InputMethodHook
 import com.example.flipunlock.hook.ime.SogouInputHook
+import com.example.flipunlock.hook.miuihome.LauncherHook
 import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.DeviceGuard
 import com.example.flipunlock.hook.util.log
@@ -40,6 +41,8 @@ class Main : XposedModule() {
     private val packageHooks = listOf<BaseHook>(
         // identity/ — device type spoofing (ROOT HOOK, must be first)
         DeviceIdentityHook,               // isFlipDevice/isFoldDevice/isTinyScreen → false
+        // miuihome/ — bottom gesture diagnostics + repair (refMD §40)
+        LauncherHook,                     // Gate4 实装；Gate1/3/6 诊断；bypass 开关默认关
         // ScreenTypeHook,              // [OFF] Configuration.getScreenType → 0
         // fliphome/ — widget overlay
         // WidgetRemove,                // [OFF] widget overlay complete removal
