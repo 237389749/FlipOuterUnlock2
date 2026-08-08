@@ -61,10 +61,10 @@ class Main : XposedModule() {
     }
 
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
-        log("Main: onSystemServerStarting — minimal mode (DeviceIdentityHook + LauncherRouteHook)")
+        log("Main: onSystemServerStarting — Flip1 core set (identity + launcher route + launch restriction)")
         LauncherRouteHook.hook(param)      // updateHomeIntent displayID==5 bypass
-        // AppRestriction.hook(param)       // [OFF]
-        // AppWhitelist.hook(param)         // [OFF]
+        AppRestriction.hook(param)         // 外屏启动限制单门闸 → false
+        AppWhitelist.hook(param)           // allowstart 白名单全量注册（内存态）
         // CutoutRemove.hook(param)         // [OFF]
         // AppFullscreen.hook(param)        // [OFF]
         // AppContinuity.hook(param)        // [OFF]

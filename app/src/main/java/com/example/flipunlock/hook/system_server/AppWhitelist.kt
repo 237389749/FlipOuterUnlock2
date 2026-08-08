@@ -51,6 +51,12 @@ object AppWhitelist {
     private const val POLL_INTERVAL_MS = 2_000L
 
     fun hook(param: SystemServerStartingParam) {
+        if (!Config.enabled) return
+        // Flip2 continuity topology differs (§34) — Flip1-only until audited.
+        if (!DeviceGuard.isFlip1) {
+            log("AppWhitelist: skipped on gen=${DeviceGuard.gen} (Flip1-only for now)")
+            return
+        }
         log("AppWhitelist: armed (deferred until boot completes)")
         // Do NOTHING synchronously here — system_server is mid-bootstrap.
         Thread {

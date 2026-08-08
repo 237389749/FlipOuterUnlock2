@@ -28,6 +28,11 @@ object AppRestriction {
 
     fun hook(param: SystemServerStartingParam) {
         if (!Config.enabled) return
+        // Flip2 gate semantics unverified (§34) — Flip1-only until audited.
+        if (!DeviceGuard.isFlip1) {
+            log("AppRestriction: skipped on gen=${DeviceGuard.gen} (Flip1-only for now)")
+            return
+        }
         log("AppRestriction: setting up")
         safeHook("AppRestriction") {
             val cls = param.classLoader.loadClass(
