@@ -20,6 +20,7 @@ import com.example.flipunlock.hook.systemui.StatusBarHook
 import com.example.flipunlock.hook.system_server.InputMethodHook
 import com.example.flipunlock.hook.ime.SogouInputHook
 import com.example.flipunlock.hook.util.Config
+import com.example.flipunlock.hook.util.DeviceGuard
 import com.example.flipunlock.hook.util.log
 
 import io.github.libxposed.api.XposedModule
@@ -56,6 +57,7 @@ class Main : XposedModule() {
     override fun onModuleLoaded(param: ModuleLoadedParam) {
         module = this
         Config.logConfig()
+        DeviceGuard.logInfo()
     }
 
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
