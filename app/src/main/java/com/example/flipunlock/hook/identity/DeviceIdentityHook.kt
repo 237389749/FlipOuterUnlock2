@@ -35,6 +35,8 @@ object DeviceIdentityHook : BaseHook() {
 
     override fun hook(param: PackageReadyParam) {
         val pkg = param.packageName
+        // Master kill switch checked AFTER set-add: a process skipped while
+        // disabled must still be hookable when the switch turns back on.
         val excluded = when (pkg) {
             "com.android.systemui" -> Config.identityExcludeSystemUi
             "com.miui.fliphome" -> Config.identityExcludeFliphome
@@ -46,6 +48,10 @@ object DeviceIdentityHook : BaseHook() {
             return
         }
         if (!installedLoaders.add(param.classLoader)) return
+        if (!Config.enabled) {
+            log("DeviceIdentityHook: master switch off, skipped for $pkg")
+            return
+        }
 
         super.hook(param)
     }
