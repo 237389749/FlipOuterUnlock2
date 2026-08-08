@@ -45,6 +45,21 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *
  * Toggle: persist.flipunlock.display.fullscreen (default true)
  * Process: system_server (#1-#4) + app processes (#5-#6)
+ *
+ * ═══ Generation divergence (refMD §34/§36) ═══
+ * The size-compat chain above (#1-#6) is Flip1-only. On Flip2 the outer
+ * screen IS the default display (displayId 0), so screenType stays 0,
+ * isFlipFolded stays false and the MIUI_SIZE_COMPAT_MODE letterbox never
+ * triggers — the whole chain is naturally dead. The Flip2 culprit is the
+ * AOSP DISPLAY_CUTOUT letterbox instead:
+ *
+ *   Flip2 server (#7): WindowStateStubImpl.isMiuiLayoutInCutoutAlways → true
+ *     → WindowState.isLetterboxedForDisplayCutout() short-circuits to false
+ *       (defense; the app-side hook below already starves condition ①)
+ *   Flip2 app (#8): WindowLayoutStubImpl.getLayoutInDisplayCutoutMode → 3 (ALWAYS)
+ *     → WindowLayout.computeFrames skips cutout clipping
+ *     → isParentFrameClippedByDisplayCutout stays false → content covers
+ *       the punch-hole = true fullscreen (§36.3)
  */
 object AppFullscreen {
 
@@ -53,13 +68,41 @@ object AppFullscreen {
             log("AppFullscreen: DISABLED by persist.flipunlock.display.fullscreen")
             return
         }
-        log("AppFullscreen: setting up")
-        safeHook("AppFullscreen") {
-            hookFlipCompatModeByApp(param.classLoader)
-            hookFlipCompatModeByActivity(param.classLoader)
-            hookFullScreenValue(param.classLoader)
-            hookGlobalScale(param.classLoader)
+        when (DeviceGuard.gen) {
+            DeviceGuard.DeviceGen.FLIP1 -> hookServerFlip1(param.classLoader)
+            DeviceGuard.DeviceGen.FLIP2 -> hookServerFlip2(param.classLoader)
+            else -> log("AppFullscreen: unknown generation, skipped")
         }
+    }
+
+    // ── Flip1: size-compat letterbox chain (system_server #1-#4) ──
+    private fun hookServerFlip1(classLoader: ClassLoader) {
+        log("AppFullscreen[flip1]: setting up")
+        safeHook("AppFullscreen") {
+            hookFlipCompatModeByApp(classLoader)
+            hookFlipCompatModeByActivity(classLoader)
+            hookFullScreenValue(classLoader)
+            hookGlobalScale(classLoader)
+        }
+    }
+
+    // ── Flip2: DISPLAY_CUTOUT letterbox kill (system_server #7) ───
+    private fun hookServerFlip2(classLoader: ClassLoader) {
+        log("AppFullscreen[flip2]: setting up")
+        safeHook("AppFullscreen.flip2") {
+            hookLayoutInCutoutAlways(classLoader)
+        }
+    }
+
+    // ── #7 WindowStateStubImpl.isMiuiLayoutInCutoutAlways(LayoutParams) → true ──
+    private fun hookLayoutInCutoutAlways(classLoader: ClassLoader) {
+        runCatching {
+            val cls = classLoader.loadClass("com.android.server.wm.WindowStateStubImpl")
+            val attrsClass = classLoader.loadClass("android.view.WindowManager\$LayoutParams")
+            val method = cls.method("isMiuiLayoutInCutoutAlways", attrsClass)
+            hook(method, replaceResult(true))
+            log("AppFullscreen[flip2]: isMiuiLayoutInCutoutAlways → true (no cutout letterbox)")
+        }.onFailure { log("AppFullscreen[flip2]: isMiuiLayoutInCutoutAlways hook failed", it) }
     }
 
     // ── #1 BoundsCompatUtils.getFlipCompatModeByApp(ATMS, String) → 0 ──
@@ -128,10 +171,30 @@ object AppFullscreen {
     fun hookApp(param: PackageReadyParam) {
         if (!Config.displayFullscreen) return
         if (param.packageName in Exclusions.DEVICE_IDENTITY) return
-        safeHook("AppFullscreen") {
-            hookSizeCompatScaleMode(param.classLoader)
-            hookSizeCompatBounds(param.classLoader)
+        when (DeviceGuard.gen) {
+            DeviceGuard.DeviceGen.FLIP1 -> safeHook("AppFullscreen") {
+                hookSizeCompatScaleMode(param.classLoader)
+                hookSizeCompatBounds(param.classLoader)
+            }
+            DeviceGuard.DeviceGen.FLIP2 -> safeHook("AppFullscreen.flip2") {
+                hookCutoutModeAlways(param.classLoader)
+            }
+            else -> {}
         }
+    }
+
+    // ── #8 (Flip2) WindowLayoutStubImpl.getLayoutInDisplayCutoutMode(LayoutParams) → 3 ──
+    // ALWAYS mode → WindowLayout.computeFrames skips cutout clipping entirely,
+    // so content covers the punch-hole and the server never sees a clipped
+    // parent frame (root cause fix; #7 is the server-side defense).
+    private fun hookCutoutModeAlways(classLoader: ClassLoader) {
+        runCatching {
+            val cls = classLoader.loadClass("android.view.WindowLayoutStubImpl")
+            val attrsClass = classLoader.loadClass("android.view.WindowManager\$LayoutParams")
+            val method = cls.method("getLayoutInDisplayCutoutMode", attrsClass)
+            hook(method, replaceResult(3))
+            log("AppFullscreen[flip2]: getLayoutInDisplayCutoutMode → ALWAYS (content covers cutout)")
+        }.onFailure { log("AppFullscreen[flip2]: getLayoutInDisplayCutoutMode hook failed", it) }
     }
 
     // ── #5 ActivityThreadImpl.inMiuiSizeCompatScaleMode() → false ──
