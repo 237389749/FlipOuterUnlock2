@@ -29,7 +29,9 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 object DeviceIdentityHook : BaseHook() {
     override val targetPackages = listOf("*")
 
-    @Volatile private var hooksInstalled = false
+    // Install once per classloader (per process). A plain one-shot flag would
+    // permanently skip hooking if the first wildcard fire is an excluded pkg.
+    private val installedLoaders = mutableSetOf<ClassLoader>()
 
     override fun hook(param: PackageReadyParam) {
         val pkg = param.packageName
@@ -43,8 +45,7 @@ object DeviceIdentityHook : BaseHook() {
             log("DeviceIdentityHook: $pkg excluded (keeps real flip identity)")
             return
         }
-        if (hooksInstalled) return
-        hooksInstalled = true
+        if (!installedLoaders.add(param.classLoader)) return
 
         super.hook(param)
     }
