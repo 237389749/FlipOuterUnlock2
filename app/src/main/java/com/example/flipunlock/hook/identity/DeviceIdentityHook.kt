@@ -19,7 +19,12 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  *     are untested and may cause side effects.
  *
  * Wildcard hook: fires on firstPackage only.
- * No exclusions — applies to ALL packages.
+ * Exclusions (restored from validated 262 config, 2026-08-08):
+ *   - com.android.systemui  : TinyKeyguardPanelViewController NPE-crashes
+ *     KeyguardService when isFlipDevice→false (HyperOS3 firmware b5c1e89).
+ *   - com.miui.fliphome     : outer launcher init needs real identity.
+ *   - sogou IME             : keyboard height on outer screen.
+ * Each exclusion is togglable via persist.flipunlock.identity.exclude.*
  */
 object DeviceIdentityHook : BaseHook() {
     override val targetPackages = listOf("*")
@@ -27,6 +32,17 @@ object DeviceIdentityHook : BaseHook() {
     @Volatile private var hooksInstalled = false
 
     override fun hook(param: PackageReadyParam) {
+        val pkg = param.packageName
+        val excluded = when (pkg) {
+            "com.android.systemui" -> Config.identityExcludeSystemUi
+            "com.miui.fliphome" -> Config.identityExcludeFliphome
+            "com.sohu.inputmethod.sogou.xiaomi" -> Config.identityExcludeSogou
+            else -> false
+        }
+        if (excluded) {
+            log("DeviceIdentityHook: $pkg excluded (keeps real flip identity)")
+            return
+        }
         if (hooksInstalled) return
         hooksInstalled = true
 

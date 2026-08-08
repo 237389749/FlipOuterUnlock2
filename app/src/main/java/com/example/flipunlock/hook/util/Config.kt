@@ -125,6 +125,15 @@ object Config {
     // Other
     val ime: Boolean get() = enabled && raw("persist.flipunlock.ime", true)
 
+    // Identity exclusion — packages that need the REAL flip identity.
+    // SystemUI MUST stay excluded: isFlipDevice→false inside SystemUI makes
+    // TinyKeyguardPanelViewController construction NPE on HyperOS3 firmware,
+    // crashing KeyguardService in a loop (screen wake dead). Verified 2026-08-08.
+    // fliphome/sogou exclusions replicate the validated 262 config.
+    val identityExcludeSystemUi: Boolean get() = raw("persist.flipunlock.identity.exclude.systemui", true)
+    val identityExcludeFliphome: Boolean get() = raw("persist.flipunlock.identity.exclude.fliphome", true)
+    val identityExcludeSogou: Boolean get() = raw("persist.flipunlock.identity.exclude.sogou", true)
+
     // Disabled by default — broken / not needed
     val camera: Boolean get() = enabled && raw("persist.flipunlock.camera", false)
     val launcherDensity: Boolean get() = enabled && raw("persist.flipunlock.ui.launcherdensity", false)
