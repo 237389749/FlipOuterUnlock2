@@ -54,11 +54,13 @@ object DeviceGuard {
     val isFlip2: Boolean get() = gen == DeviceGen.FLIP2
 
     // ── Display topology constants (folded, outer active) ─────────
-    // Flip1: outer is the SECONDARY display (displayId 5).
+    // CORRECTED 2026-08-08 by live dumpsys (ruyi, OS3.0.3.0.WNICNXM / HyperOS3):
+    //   Flip1 HyperOS3: outer = displayId 0 (default), inner = displayId 1.
+    //   Old MIUI/HyperOS2 firmwares used outer=5/inner=0 (legacy LauncherRouteHook).
     // Flip2: outer IS the DEFAULT display (displayId 0) — §34.1.
     object Topology {
-        const val FLIP1_OUTER_DISPLAY_ID = 5
-        const val FLIP1_INNER_DISPLAY_ID = 0
+        const val FLIP1_OUTER_DISPLAY_ID = 0
+        const val FLIP1_INNER_DISPLAY_ID = 1
         const val FLIP2_OUTER_DISPLAY_ID = 0
         const val FLIP2_INNER_DISPLAY_ID = 1
     }
@@ -75,8 +77,10 @@ object DeviceGuard {
     // Outer panel is identical on both generations.
     const val OUTER_W = 1208
     const val OUTER_H = 1392
-    const val FLIP1_INNER_W = 1555
-    const val FLIP1_INNER_H = 2508
+    // CORRECTED 2026-08-08 by live dumpsys: Flip1 inner is 1080x2340 on
+    // HyperOS3 firmware (1555x2508 came from stale notes).
+    const val FLIP1_INNER_W = 1080
+    const val FLIP1_INNER_H = 2340
     const val FLIP2_INNER_W = 1224
     const val FLIP2_INNER_H = 2912
 

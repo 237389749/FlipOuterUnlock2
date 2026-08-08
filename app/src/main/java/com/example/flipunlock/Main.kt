@@ -12,6 +12,7 @@ import com.example.flipunlock.hook.system_server.AppFullscreen
 import com.example.flipunlock.hook.system_server.AppRestriction
 import com.example.flipunlock.hook.system_server.AppWhitelist
 import com.example.flipunlock.hook.system_server.CutoutRemove
+import com.example.flipunlock.hook.system_server.DisplayTopologyHook
 import com.example.flipunlock.hook.system_server.LauncherRouteHook
 import com.example.flipunlock.hook.system_server.SubScreenGesture
 import com.example.flipunlock.hook.systemui.ControlCenterHook
@@ -61,10 +62,11 @@ class Main : XposedModule() {
     }
 
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
-        log("Main: onSystemServerStarting — Flip1 core set (identity + launcher route + launch restriction)")
+        log("Main: onSystemServerStarting — Flip1 core set (identity + launcher route + launch restriction + display topology)")
         LauncherRouteHook.hook(param)      // updateHomeIntent displayID==5 bypass
         AppRestriction.hook(param)         // 外屏启动限制单门闸 → false
         AppWhitelist.hook(param)           // allowstart 白名单全量注册（内存态）
+        DisplayTopologyHook.hook(param)    // 内屏已拆：钉死 state=0，外屏恒为主屏
         // CutoutRemove.hook(param)         // [OFF]
         // AppFullscreen.hook(param)        // [OFF]
         // AppContinuity.hook(param)        // [OFF]
