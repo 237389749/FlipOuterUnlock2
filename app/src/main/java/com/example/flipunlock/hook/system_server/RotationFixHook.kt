@@ -35,7 +35,10 @@ object RotationFixHook {
                 log("RotationFix: ✓ needEnableSensor → true (sensor rotation enabled)")
             }.onFailure { log("RotationFix: ③ needEnableSensor failed: ${it.message}") }
 
-            // ── ① AOSP DisplayRotation.setUserRotation(int,int,String)（主路径）──
+            // ── ① AOSP DisplayRotation.setUserRotation(int,int,String) ──
+            // 仅折叠切换（caller=DoubleSwitch）时 mode 1(LOCKED)→0(FREE)（mUserRotationModeOuter
+            // 在 resetprop 后构造=1，折叠切换会把外屏锁死）。其他调用（控制中心旋转磁贴/
+            // 用户手动锁定）正常 proceed——否则磁贴关闭自动旋转会被强制改回开启（点击无反应）。
             runCatching {
                 val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotation")
                 val method = cls.method("setUserRotation",
@@ -44,14 +47,15 @@ object RotationFixHook {
                     String::class.java)
                 hook(method) { chain ->
                     val mode = chain.args[0] as? Int
-                    if (mode == 1) {
-                        log("RotationFix: ✓ DisplayRotation.setUserRotation LOCKED→FREE")
+                    val caller = chain.args[2] as? String
+                    if (mode == 1 && caller != null && caller.contains("DoubleSwitch")) {
+                        log("RotationFix: ✓ DoubleSwitch LOCKED→FREE")
                         chain.proceed(arrayOf<Any?>(0, chain.args[1], chain.args[2]))
                     } else {
                         chain.proceed()
                     }
                 }
-                log("RotationFix: ✓ hooked DisplayRotation.setUserRotation(int,int,String)")
+                log("RotationFix: ✓ hooked DisplayRotation.setUserRotation(int,int,String) [DoubleSwitch only]")
             }.onFailure { log("RotationFix: ① DisplayRotation.setUserRotation failed: ${it.message}") }
 
             // ── ② DisplayRotationStubImpl 私有 setUserRotation(int,int)（次路径）──
