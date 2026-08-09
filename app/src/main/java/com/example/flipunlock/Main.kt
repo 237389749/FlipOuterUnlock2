@@ -2,6 +2,8 @@ package com.example.flipunlock
 
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.aod.AodHook
+import com.example.flipunlock.hook.identity.CameraReverseHook
+import com.example.flipunlock.hook.identity.CutoutAlwaysHook
 import com.example.flipunlock.hook.identity.DeviceIdentityHook
 import com.example.flipunlock.hook.identity.ScreenTypeHook
 import com.example.flipunlock.hook.fliphome.RecentsCacheFix
@@ -12,6 +14,7 @@ import com.example.flipunlock.hook.system_server.AppFullscreen
 import com.example.flipunlock.hook.system_server.AppRestriction
 import com.example.flipunlock.hook.system_server.AppWhitelist
 import com.example.flipunlock.hook.system_server.CutoutRemove
+import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.SubScreenGesture
 import com.example.flipunlock.hook.systemui.ControlCenterHook
 import com.example.flipunlock.hook.systemui.FlashlightHook
@@ -36,23 +39,21 @@ class Main : XposedModule() {
     //     fires on firstPackage only).
     // ──────────────────────────────────────────────────────────────────
     private val packageHooks = listOf<BaseHook>(
-        // identity/ — device type spoofing (ROOT HOOK, must be first)
-        DeviceIdentityHook,               // isFlipDevice/isFoldDevice/isTinyScreen → false, static field clearing
-        ScreenTypeHook,                   // Configuration.getScreenType → 0 (EXPAND)
-        // fliphome/ — widget overlay
-        WidgetRemove,                   // widget overlay complete removal (refreshWindow ADD→REMOVE) — confirmed working
-        RecentsCacheFix,                // 最近任务修复：缓存刷新 + needRemoveTask过滤绕过
-        // WidgetTouchPassthrough,      // FLAG_NOT_TOUCHABLE verified applied via dumpsys, yet touches are STILL
-        //                              // intercepted → a second MIUI input mechanism reserves the region while the
-        //                              // overlay window exists; flag-only passthrough is insufficient. Kept for reference.
-        // aod/ — always-on display on the outer screen (app side: DreamService + runtime DozeMachine)
-        // AodHook,                        // [DISABLED 2026-08-10 用户指示] 外屏 AOD
+        // identity/ — app 端 cutout 四件套（Parser/Display.getCutout/getBoundingRect/mode→3）
+        CutoutAlwaysHook,                 // wildcard（camera 排除，保留真实 cutout）
+        CameraReverseHook,                // camera 属性反向覆盖：multi_display_type→4（恢复 flip 布局）
         // systemui/ — SystemUI process hooks
-        FlashlightHook,                 // bypass "flip to turn on flashlight" on outer screen
-        ControlCenterHook,              // restore normal (non-compact) control center style
-        StatusBarHook,                  // expand notification icon limit on outer screen
-        // ime/ — Sogou IME process
-        SogouInputHook,                 // IME toolbar + clipboard fix (DexKit)
+        FlashlightHook,                   // bypass "flip to turn on flashlight" on outer screen（控制中心手电筒）
+        // [DISABLED 2026-08-10 resetprop 方案] 其他 app hooks 全部注释：
+        // DeviceIdentityHook,   // resetprop 已全局替代（属性表=1，静态常量也变）
+        // ScreenTypeHook,
+        // WidgetRemove,
+        // RecentsCacheFix,
+        // ControlCenterHook,
+        // StatusBarHook,
+        // SogouInputHook,
+        // LauncherHook,
+        // AodHook,
     )
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
@@ -61,27 +62,25 @@ class Main : XposedModule() {
     }
 
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
-        log("Main: onSystemServerStarting")
-        AppRestriction.hook(param)
-        AppWhitelist.hook(param)
-        CutoutRemove.hook(param)
-        AppFullscreen.hook(param)
-        AppContinuity.hook(param)
-        // AodHook.hookFramework(param)    // [DISABLED 2026-08-10 用户指示] AOD 保活
-        SubScreenGesture.hook(param)      // double-tap-to-sleep on outer screen
-        InputMethodHook.hook(param)        // IME freedom: allow any rotation, unlock IME choice
+        log("Main: onSystemServerStarting — resetprop 方案精简集")
+        RotationFixHook.hook(param)   // 方向修复：DisplayRotation.setUserRotation LOCKED→FREE
+        // [DISABLED 2026-08-10 resetprop 方案] 其他 system_server hooks 全部注释：
+        // AppRestriction.hook(param)   // resetprop 已解除外屏启动限制
+        // AppWhitelist.hook(param)
+        // CutoutRemove.hook(param)     // 普通 app cutout 由 CutoutAlwaysHook（app 端）处理
+        // AppFullscreen.hook(param)
+        // AppContinuity.hook(param)    // resetprop 后内屏流转正常
+        // SubScreenGesture.hook(param)
+        // InputMethodHook.hook(param)
+        // AodHook.hookFramework(param)
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
         log("Main: onPackageReady pkg=${param.packageName} first=${param.isFirstPackage}")
-        // Camera process: install CutoutRemove without Parser.parse zeroing
-        // so camera gets real cutout data (bounds) for layout calculations.
-        if (param.packageName == "com.android.camera") {
-            log("Main: loading CutoutRemove.hookApp for camera (real cutout preserved)")
-            CutoutRemove.hookApp(param)
-        }
-        // App-side size-compat disable (complements AppFullscreen system_server hooks)
-        AppFullscreen.hookApp(param)
+        // [DISABLED 2026-08-10 resetprop 方案] camera/AppFullscreen 的 app 侧由
+        // CameraReverseHook + CutoutAlwaysHook（camera 排除）处理：
+        // if (param.packageName == "com.android.camera") { CutoutRemove.hookApp(param) }
+        // AppFullscreen.hookApp(param)
         packageHooks.forEach { hook ->
             val isWildcard = hook.targetPackages.contains("*")
             val isTargeted = hook.targetPackages.contains(param.packageName)
