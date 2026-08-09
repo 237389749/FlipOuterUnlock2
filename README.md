@@ -128,6 +128,30 @@ AGPL-3.0
 
 ---
 
+## Current Status (2026-08-10) — for AI/developers onboarding
+
+**Baseline: `90833c4`** (CI Build #83) — verified working on Flip2 (bixi). Do NOT break this baseline.
+
+### Verified working on Flip2 (90833c4)
+- 外屏启动限制解除（AppRestriction + AppWhitelist allowstart）
+- cutout 解决（CutoutRemove: Parser 清零 + camera 防御）
+- AOD / 控制中心 / 启动限制等全量 hooks
+
+### Flip2 排查结论（为什么"没有重量级上游"）
+- **无属性层大杀器**：`muiltdisplay_type` 无 Java 消费方（§34.5/34.7）；`multi_display_type 4→1` 不解决全屏（flip2 全屏链天然断，§34.2）
+- **全屏真凶** = AOSP `DISPLAY_CUTOUT` letterbox（§34.3），需 `WindowStateStubImpl.isMiuiLayoutInCutoutAlways→true`（服务端单点，flip2 实测未达）
+- **LSPosed 2.0.1 KSU 环境 system_server 注入异常**（scope 配置正常也可能不注入；app 进程正常）
+- **教训**：Flip1-only 机型守护会让 flip2 跳过（回归源）；scope 只覆盖勾选的应用（普通应用不注入）
+
+### 开发指引
+- 新实验走**单独分支**（勿动 master 基线）；验证过再合
+- 修改后：push → CI 编译 → 装机重启 → `adb shell su -c 'logcat -d | grep FlipOuterUnlock'` 验证
+- 分析新问题先查 `refMD/cleaned/`（已有结论），再看 `FlipRes/`（反编译）
+
+---
+
+---
+
 <a name="chinese"></a>
 ## 中文
 
