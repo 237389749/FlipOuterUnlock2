@@ -25,6 +25,16 @@ object RotationFixHook {
     fun hook(param: SystemServerStartingParam) {
         log("RotationFix: setting up")
         safeHook("RotationFix") {
+            // ── ③ DisplayRotationStubImpl.needEnableSensor() → true（转不动的根因）──
+            // resetprop（multi_display_type=1）→ system_server isFlipDevice=false →
+            // needEnableSensor() 恒 false → 方向传感器永不启用 → 转设备方向不变。
+            // （flip2-miui-services L722：非 flip 分支 return false）
+            runCatching {
+                val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotationStubImpl")
+                hook(cls.method("needEnableSensor"), replaceResult(true))
+                log("RotationFix: ✓ needEnableSensor → true (sensor rotation enabled)")
+            }.onFailure { log("RotationFix: ③ needEnableSensor failed: ${it.message}") }
+
             // ── ① AOSP DisplayRotation.setUserRotation(int,int,String)（主路径）──
             runCatching {
                 val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotation")
