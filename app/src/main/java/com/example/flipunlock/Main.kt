@@ -46,7 +46,7 @@ class Main : XposedModule() {
         //                              // intercepted → a second MIUI input mechanism reserves the region while the
         //                              // overlay window exists; flag-only passthrough is insufficient. Kept for reference.
         // aod/ — always-on display on the outer screen (app side: DreamService + runtime DozeMachine)
-        AodHook,                        // #5 cutout hook now scoped to AOD call path only
+        // AodHook,                        // [DISABLED 2026-08-10 用户指示] 外屏 AOD
         // systemui/ — SystemUI process hooks
         FlashlightHook,                 // bypass "flip to turn on flashlight" on outer screen
         ControlCenterHook,              // restore normal (non-compact) control center style
@@ -67,7 +67,7 @@ class Main : XposedModule() {
         CutoutRemove.hook(param)
         AppFullscreen.hook(param)
         AppContinuity.hook(param)
-        AodHook.hookFramework(param)    // #5 cutout hook now scoped to AOD call path only
+        // AodHook.hookFramework(param)    // [DISABLED 2026-08-10 用户指示] AOD 保活
         SubScreenGesture.hook(param)      // double-tap-to-sleep on outer screen
         InputMethodHook.hook(param)        // IME freedom: allow any rotation, unlock IME choice
     }

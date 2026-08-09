@@ -34,6 +34,7 @@ object DeviceIdentityHook : BaseHook() {
 
     override fun setupHooks(param: PackageReadyParam) {
         log("DeviceIdentityHook: loading for ${param.packageName}")
+        hookSystemProperties(param.classLoader)
         hookRootDeviceType(param)
         hookMiuiBuild(param)
         hookMiuixBuildStatic(param)
@@ -41,6 +42,31 @@ object DeviceIdentityHook : BaseHook() {
         hookDeviceHelper(param)
         hookMiuiConfigs(param)
         hookDefensiveStatics(param)
+    }
+
+    /**
+     * 属性层（flip2 加入，2026-08-10）：hook persist.sys.multi_display_type 读取 → 1。
+     * 覆盖所有运行时读属性的代码（isFlipDevice/isFoldDevice/静态常量初始化等），
+     * 比逐个 hook 方法更上游。android.os.SystemProperties（AOSP 最终实现）+
+     * miuix 包装（MixFlipMod 同款）双路径保险。
+     * 注意：静态常量（miuix.os.Build.IS_FLIP 等）zygote 类加载时固化，hook 覆盖不了
+     * ——需 resetprop（root, post-fs-data）才能在 fork 前生效。
+     */
+    private fun hookSystemProperties(classLoader: ClassLoader) {
+        runCatching {
+            val sp = classLoader.loadClass("android.os.SystemProperties")
+            hook(sp.method("getInt", String::class.java, Int::class.java)) { chain ->
+                if (chain.args[0] == "persist.sys.multi_display_type") 1 else chain.proceed()
+            }
+            log("DeviceIdentity: hooked android SystemProperties.getInt (multi_display_type→1)")
+        }.onFailure { log("DeviceIdentity: android SystemProperties hook failed", it) }
+        runCatching {
+            val sp = classLoader.loadClass("miuix.core.util.SystemProperties")
+            hook(sp.method("getInt", String::class.java, Int::class.java)) { chain ->
+                if (chain.args[0] == "persist.sys.multi_display_type") 1 else chain.proceed()
+            }
+            log("DeviceIdentity: hooked miuix SystemProperties.getInt")
+        }.onFailure { log("DeviceIdentity: miuix SystemProperties hook failed", it) }
     }
 
     // ── ROOT: MiuiMultiDisplayTypeInfo ─────────────────────────────────
