@@ -3,16 +3,8 @@ name: CI Build
 on:
   workflow_dispatch:
   push:
-    branches: [ master, main ]
+    branches: [ main ]
     tags: [ v* ]
-    paths:
-      - 'app/**'
-      - '.github/workflows/**'
-      - 'gradle/**'
-      - 'gradlew*'
-      - 'build.gradle*'
-      - 'settings.gradle*'
-      - 'gradle.properties'
   pull_request:
     types: [ opened, synchronize, reopened ]
     paths:
