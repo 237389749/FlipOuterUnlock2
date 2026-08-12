@@ -70,7 +70,7 @@ class Main : XposedModule() {
         AppRestriction.hook(param)         // 外屏启动限制单门闸 → false
         AppWhitelist.hook(param)           // allowstart 白名单全量注册（内存态）
         DisplayTopologyHook.hook(param)    // 内屏已拆：钉死 state=0，外屏恒为主屏
-        // CutoutRemove.hook(param)         // [OFF]
+        CutoutRemove.hook(param)           // [ENABLED 2026-08-12 诊断] cutout 清零(system_server)
         // AppFullscreen.hook(param)        // [OFF]
         // AppContinuity.hook(param)        // [OFF]
         // AodHook.hookFramework(param)     // [OFF]
@@ -80,10 +80,10 @@ class Main : XposedModule() {
 
     override fun onPackageReady(param: PackageReadyParam) {
         log("Main: onPackageReady pkg=${param.packageName} first=${param.isFirstPackage}")
-        // Camera process: [OFF]
-        // if (param.packageName == "com.android.camera") {
-        //     CutoutRemove.hookApp(param)
-        // }
+        // Camera process: [ENABLED 2026-08-12 诊断] 相机 NPE 防御(getCutout→有效 DisplayCutout)
+        if (param.packageName == "com.android.camera") {
+            CutoutRemove.hookApp(param)
+        }
         // App-side size-compat: [OFF]
         // AppFullscreen.hookApp(param)
         packageHooks.forEach { hook ->
