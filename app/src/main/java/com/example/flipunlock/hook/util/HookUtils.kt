@@ -24,6 +24,11 @@ internal fun safeHook(name: String, block: () -> Unit) {
     runCatching(block).onFailure { log("[$name] failed", it) }
 }
 
+internal fun currentProcessName(): String? = runCatching {
+    val at = Class.forName("android.app.ActivityThread")
+    at.getMethod("currentProcessName").invoke(null) as? String
+}.getOrNull()
+
 internal fun log(msg: String, e: Throwable? = null) {
     // Use android.util.Log directly — LSPosed module.log() may not go to logcat
     if (e != null) Log.e(LOG_TAG, msg, e) else Log.e(LOG_TAG, msg)

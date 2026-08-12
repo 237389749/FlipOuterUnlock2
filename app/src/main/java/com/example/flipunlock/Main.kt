@@ -57,11 +57,12 @@ class Main : XposedModule() {
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
         module = this
+        log("Main: onModuleLoaded — process=${currentProcessName()} (system_server? ${currentProcessName() == "system_server"})")
         Config.logConfig()
     }
 
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
-        log("Main: onSystemServerStarting")
+        log("Main: onSystemServerStarting — process=${currentProcessName()}")
         AppRestriction.hook(param)
         AppWhitelist.hook(param)
         CutoutRemove.hook(param)
@@ -73,7 +74,11 @@ class Main : XposedModule() {
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
-        log("Main: onPackageReady pkg=${param.packageName} first=${param.isFirstPackage}")
+        val proc = currentProcessName()
+        if (proc == "system_server") {
+            log("Main: onPackageReady IN SYSTEM_SERVER pkg=${param.packageName} first=${param.isFirstPackage}")
+        }
+        log("Main: onPackageReady pkg=${param.packageName} first=${param.isFirstPackage} proc=$proc")
         // Camera process: install CutoutRemove without Parser.parse zeroing
         // so camera gets real cutout data (bounds) for layout calculations.
         if (param.packageName == "com.android.camera") {
