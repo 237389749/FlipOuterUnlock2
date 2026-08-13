@@ -79,11 +79,15 @@ object RotationFixHook {
             }.onFailure { log("RotationFix: ② StubImpl.setUserRotation failed: ${it.message}") }
 
             // ── ④ MiuiOrientationImpl.getOrientationMode：外屏折叠态 -1→3（桌面/系统UI/portrait app 旋转）──
-            // 2026-08-14 修复: displayId 反射改用 declared+setAccessible 逐层向上找。
-            //   原实现用 getMethod("getDisplayContent")/getField("mDisplayId") —— 这两个 API
-            //   只认 public 成员, 而 ActivityRecord.getDisplayContent()(WindowContainer 声明)
-            //   与 DisplayContent.mDisplayId 都是 package-private → 每次调用抛 NoSuchMethod/NoSuchField
-            //   被 runCatching 静默吞掉 → 永远不返回 3 → 桌面/系统UI/portrait app 仍锁(用户实测)。
+            // 2026-08-14 修复(2): 无条件 -1→3，不再卡 displayId==0 条件。
+            //   依据: ① flip1 单 display 活跃(display1 内屏已拆仍枚举, 无 app 运行);
+            //         ② 属性4原生行为=折叠态外屏全 app mode3(除 skip 名单), 此处即复刻;
+            //         ③ 用户实测: 桌面/计算器(requestedOrientation=USER_PORTRAIT=3)走
+            //            setOrientation overrideOrientationAllowed=false 分支直接 super.setOrientation,
+            //            根本不经过 getOrientationMode —— 它们能转是 ①②③ 层的功劳, ④层是否生效看不出来;
+            //            设置/通知栏/控制中心(硬 PORTRAIT=1)必须 ④层 -1→3 才能转, 实测仍锁
+            //            → displayIdOf 探测失败或调用未覆盖是唯一解释, 无条件转换排除 displayId 因素。
+            //   displayId 仅留日志用; 每次转换打 pkg 日志(日志不可靠, 出现即铁证)。
             runCatching {
                 val cls = param.classLoader.loadClass("com.android.server.wm.MiuiOrientationImpl")
                 val arCls = param.classLoader.loadClass("com.android.server.wm.ActivityRecord")
@@ -93,17 +97,13 @@ object RotationFixHook {
                     if (mode != -1) return@after mode
                     val r = chain.args[0]
                     val displayId = displayIdOf(r)
-                    if (displayId == 0) {
-                        log("RotationFix: ✓ getOrientationMode -1 → 3 (FLIP_OUTSIDE, display0 外屏)")
-                        3
-                    } else {
-                        if (displayId == null) {
-                            log("RotationFix: ④ displayId 探测失败(保持 -1, 桌面/app 仍锁)")
-                        }
-                        mode
-                    }
+                    val pkg = runCatching {
+                        r?.javaClass?.getMethod("getPackageName")?.invoke(r) as? String
+                    }.getOrNull()
+                    log("RotationFix: ✓ getOrientationMode -1 → 3 (FLIP_OUTSIDE) pkg=$pkg display=$displayId")
+                    3
                 })
-                log("RotationFix: ✓ hooked MiuiOrientationImpl.getOrientationMode(ActivityRecord,int)")
+                log("RotationFix: ✓ hooked MiuiOrientationImpl.getOrientationMode(ActivityRecord,int) [unconditional]")
             }.onFailure { log("RotationFix: ④ getOrientationMode failed: ${it.message}") }
         }
     }
