@@ -78,7 +78,12 @@ object RotationFixHook {
                 log("RotationFix: ✓ hooked DisplayRotationStubImpl.setUserRotation(int,int)")
             }.onFailure { log("RotationFix: ② StubImpl.setUserRotation failed: ${it.message}") }
 
-            // ── ④ MiuiOrientationImpl.getOrientationMode：外屏折叠态 -1→3（系统 UI 旋转）──
+            // ── ④ MiuiOrientationImpl.getOrientationMode：外屏折叠态 -1→3（桌面/系统UI/portrait app 旋转）──
+            // 2026-08-14 修复: displayId 反射改用 declared+setAccessible 逐层向上找。
+            //   原实现用 getMethod("getDisplayContent")/getField("mDisplayId") —— 这两个 API
+            //   只认 public 成员, 而 ActivityRecord.getDisplayContent()(WindowContainer 声明)
+            //   与 DisplayContent.mDisplayId 都是 package-private → 每次调用抛 NoSuchMethod/NoSuchField
+            //   被 runCatching 静默吞掉 → 永远不返回 3 → 桌面/系统UI/portrait app 仍锁(用户实测)。
             runCatching {
                 val cls = param.classLoader.loadClass("com.android.server.wm.MiuiOrientationImpl")
                 val arCls = param.classLoader.loadClass("com.android.server.wm.ActivityRecord")
@@ -87,19 +92,68 @@ object RotationFixHook {
                     val mode = result as? Int ?: -1
                     if (mode != -1) return@after mode
                     val r = chain.args[0]
-                    val displayId = runCatching {
-                        val dc = r?.javaClass?.getMethod("getDisplayContent")?.invoke(r)
-                        dc?.javaClass?.getField("mDisplayId")?.get(dc) as? Int
-                    }.getOrNull()
+                    val displayId = displayIdOf(r)
                     if (displayId == 0) {
                         log("RotationFix: ✓ getOrientationMode -1 → 3 (FLIP_OUTSIDE, display0 外屏)")
                         3
                     } else {
+                        if (displayId == null) {
+                            log("RotationFix: ④ displayId 探测失败(保持 -1, 桌面/app 仍锁)")
+                        }
                         mode
                     }
                 })
                 log("RotationFix: ✓ hooked MiuiOrientationImpl.getOrientationMode(ActivityRecord,int)")
             }.onFailure { log("RotationFix: ④ getOrientationMode failed: ${it.message}") }
         }
+    }
+
+    /** ActivityRecord → displayId。public API 优先, 失败则 declared+setAccessible 兼容 package-private
+     *  (flip1 b5c1e89: getDisplayContent/getDisplayId/mDisplayId 均非 public)。 */
+    private fun displayIdOf(r: Any?): Int? {
+        if (r == null) return null
+        // 1) public 路径: getDisplayContent() → getDisplayId()
+        runCatching {
+            val dc = r.javaClass.getMethod("getDisplayContent").invoke(r) ?: return null
+            return dc.javaClass.getMethod("getDisplayId").invoke(dc) as? Int
+        }
+        // 2) declared 路径: 方法 getDisplayContent()/getDisplayId(), 字段 mDisplayId
+        runCatching {
+            val dc = declaredMethod(r.javaClass, "getDisplayContent")?.invoke(r) ?: return null
+            declaredMethod(dc.javaClass, "getDisplayId")?.let { return it.invoke(dc) as? Int }
+            declaredField(dc.javaClass, "mDisplayId")?.let { return it.get(dc) as? Int }
+        }
+        // 3) 直接字段: mDisplayContent → mDisplayId
+        runCatching {
+            val dc = declaredField(r.javaClass, "mDisplayContent")?.get(r) ?: return null
+            declaredField(dc.javaClass, "mDisplayId")?.let { return it.get(dc) as? Int }
+        }
+        return null
+    }
+
+    private fun declaredMethod(cls: Class<*>, name: String): java.lang.reflect.Method? {
+        var c: Class<*>? = cls
+        while (c != null) {
+            runCatching {
+                val m = c.getDeclaredMethod(name)
+                m.isAccessible = true
+                return m
+            }
+            c = c.superclass
+        }
+        return null
+    }
+
+    private fun declaredField(cls: Class<*>, name: String): java.lang.reflect.Field? {
+        var c: Class<*>? = cls
+        while (c != null) {
+            runCatching {
+                val f = c.getDeclaredField(name)
+                f.isAccessible = true
+                return f
+            }
+            c = c.superclass
+        }
+        return null
     }
 }
