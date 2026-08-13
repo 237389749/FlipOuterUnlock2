@@ -38,7 +38,8 @@ object RotationFixHook {
                 log("RotationFix: ✓ needEnableSensor → true (sensor rotation enabled)")
             }.onFailure { log("RotationFix: ③ needEnableSensor failed: ${it.message}") }
 
-            // ── ① AOSP DisplayRotation.setUserRotation(int,int,String)（DoubleSwitch 过滤）──
+            // ── ① AOSP DisplayRotation.setUserRotation(int,int,String)（无条件 LOCKED→FREE）──
+            // 2026-08-13 用户决定: 不在乎旋转开关副作用(磁贴切锁定会失效), 无条件解锁
             runCatching {
                 val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotation")
                 val method = cls.method("setUserRotation",
@@ -47,15 +48,14 @@ object RotationFixHook {
                     String::class.java)
                 hook(method) { chain ->
                     val mode = chain.args[0] as? Int
-                    val caller = chain.args[2] as? String
-                    if (mode == 1 && caller != null && caller.contains("DoubleSwitch")) {
-                        log("RotationFix: ✓ DoubleSwitch LOCKED→FREE")
+                    if (mode == 1) {
+                        log("RotationFix: ✓ DisplayRotation.setUserRotation LOCKED→FREE")
                         chain.proceed(arrayOf<Any?>(0, chain.args[1], chain.args[2]))
                     } else {
                         chain.proceed()
                     }
                 }
-                log("RotationFix: ✓ hooked DisplayRotation.setUserRotation(int,int,String) [DoubleSwitch only]")
+                log("RotationFix: ✓ hooked DisplayRotation.setUserRotation(int,int,String) [unconditional]")
             }.onFailure { log("RotationFix: ① DisplayRotation.setUserRotation failed: ${it.message}") }
 
             // ── ② DisplayRotationStubImpl 私有 setUserRotation(int,int)（次路径）──
