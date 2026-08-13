@@ -20,6 +20,9 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *      （2026-08-14 恢复控制中心"锁定方向"磁贴: 磁贴 freezeRotation 等其他 caller 放行）
  *   ② DisplayRotationStubImpl.setUserRotation(int,int) → LOCKED→FREE（次路径, 拦系统折叠同步写 settings）
  *   + MiuiOrientationImpl.getOrientationMode -1→3（外屏折叠态，系统 UI 旋转，§43.2.1）
+ *   + WindowContainer.setOverrideOrientation PORTRAIT(1)→USER_ROTATION(12)（2026-08-14:
+ *     属性1下 ActivityRecord 构造走 else 分支 setOverrideOrientation(ActivityRecord:1585) 绕过
+ *     getOrientationMode → 设置/socmark 等 portrait 硬编码 app ④层覆盖不到; 复刻属性4 mode3 效果）
  *
  * 依赖：全部在 system_server，回调不稳定时（§43.7.2）可能整体不生效。
  *
@@ -110,6 +113,28 @@ object RotationFixHook {
                 })
                 log("RotationFix: ✓ hooked MiuiOrientationImpl.getOrientationMode(ActivityRecord,int) [unconditional]")
             }.onFailure { log("RotationFix: ④ getOrientationMode failed: ${it.message}") }
+
+            // ── ⑤ WindowContainer.setOverrideOrientation(int): 构造时 PORTRAIT→USER_ROTATION ──
+            // 2026-08-14: 属性1(isFlipDevice=false)下 ActivityRecord 构造走 else 分支
+            //   setOverrideOrientation(info.screenOrientation)(ActivityRecord.java:1585),
+            //   绕过 setOrientation/getOrientationMode → ④ 层覆盖不到 portrait 硬编码 app
+            //   (设置/socmark 实测锁: overrideOrientation=PORTRAIT)。hook 把 PORTRAIT(1)
+            //   →USER_ROTATION(12), 复刻属性4下 getOrientationMode→3→case3→screenOrientation=12
+            //   的效果。只改 1→12, 其他值原样(DisplayRotation 重置 -1 / TaskFragment 不受影响)。
+            runCatching {
+                val cls = param.classLoader.loadClass("com.android.server.wm.ActivityRecord")
+                val method = cls.method("setOverrideOrientation", Int::class.javaPrimitiveType!!)
+                hook(method) { chain ->
+                    val orient = chain.args[0] as? Int
+                    if (orient == 1) {
+                        log("RotationFix: ✓ setOverrideOrientation PORTRAIT→USER_ROTATION(12)")
+                        chain.proceed(arrayOf<Any?>(12))
+                    } else {
+                        chain.proceed()
+                    }
+                }
+                log("RotationFix: ✓ hooked setOverrideOrientation(int) [PORTRAIT→12]")
+            }.onFailure { log("RotationFix: ⑤ setOverrideOrientation failed: ${it.message}") }
         }
     }
 
