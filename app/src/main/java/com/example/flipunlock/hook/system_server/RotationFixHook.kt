@@ -16,8 +16,9 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *
  * 修复（三层）：
  *   ③ needEnableSensor() → true（传感器启用，重建属性 4 的原生 flip 行为，大部分 app 旋转恢复）
- *   ① DisplayRotation.setUserRotation(int,int,String) → LOCKED→FREE（无条件，用户接受磁贴副作用）
- *   ② DisplayRotationStubImpl.setUserRotation(int,int) → LOCKED→FREE（次路径）
+ *   ① DisplayRotation.setUserRotation(int,int,String) → 仅拦 DoubleSwitch(caller 过滤) LOCKED→FREE
+ *      （2026-08-14 恢复控制中心"锁定方向"磁贴: 磁贴 freezeRotation 等其他 caller 放行）
+ *   ② DisplayRotationStubImpl.setUserRotation(int,int) → LOCKED→FREE（次路径, 拦系统折叠同步写 settings）
  *   + MiuiOrientationImpl.getOrientationMode -1→3（外屏折叠态，系统 UI 旋转，§43.2.1）
  *
  * 依赖：全部在 system_server，回调不稳定时（§43.7.2）可能整体不生效。
@@ -40,8 +41,11 @@ object RotationFixHook {
                 log("RotationFix: ✓ needEnableSensor → true (sensor rotation enabled)")
             }.onFailure { log("RotationFix: ③ needEnableSensor failed: ${it.message}") }
 
-            // ── ① AOSP DisplayRotation.setUserRotation(int,int,String)（无条件 LOCKED→FREE）──
-            // 2026-08-13 用户决定: 不在乎旋转开关副作用(磁贴切锁定会失效), 无条件解锁
+            // ── ① AOSP DisplayRotation.setUserRotation(int,int,String)（仅拦 DoubleSwitch 系统折叠锁）──
+            // 2026-08-14 恢复磁贴: 由无条件改回 caller 过滤(8cf5d70 方案, 用户确认)。
+            //   属性1下系统折叠切换 setUserRotationWhenSwitchDisplay 以 "DoubleSwitch#Outer/Inner"
+            //   为 caller 发 LOCKED(外屏锁死根因 §43.7②), 只拦它;
+            //   磁贴(freezeRotation)等其他 caller 放行 → 控制中心"锁定方向"磁贴恢复。
             runCatching {
                 val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotation")
                 val method = cls.method("setUserRotation",
@@ -50,14 +54,15 @@ object RotationFixHook {
                     String::class.java)
                 hook(method) { chain ->
                     val mode = chain.args[0] as? Int
-                    if (mode == 1) {
-                        log("RotationFix: ✓ DisplayRotation.setUserRotation LOCKED→FREE")
+                    val caller = chain.args[2] as? String
+                    if (mode == 1 && caller != null && caller.contains("DoubleSwitch")) {
+                        log("RotationFix: ✓ DoubleSwitch LOCKED→FREE (磁贴等其他 caller 放行)")
                         chain.proceed(arrayOf<Any?>(0, chain.args[1], chain.args[2]))
                     } else {
                         chain.proceed()
                     }
                 }
-                log("RotationFix: ✓ hooked DisplayRotation.setUserRotation(int,int,String) [unconditional]")
+                log("RotationFix: ✓ hooked DisplayRotation.setUserRotation(int,int,String) [DoubleSwitch only]")
             }.onFailure { log("RotationFix: ① DisplayRotation.setUserRotation failed: ${it.message}") }
 
             // ── ② DisplayRotationStubImpl 私有 setUserRotation(int,int)（次路径）──
