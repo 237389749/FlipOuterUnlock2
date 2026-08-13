@@ -49,14 +49,6 @@ object SFDeviceGestureHook : BaseHook() {
     override val targetPackages = listOf("com.miui.home")
 
     override fun setupHooks(param: PackageReadyParam) {
-        // 2026-08-14: flip2 原生有外屏上滑手势, 不需要此 hook; 且强制
-        // isInSFDeviceFoldedMode→false 会触发 DeviceConfigs.updateProfileOnSpecialFDevice
-        // (flip2 是特殊设备, 非折叠 → 重算网格) → 切换布局偏移(用户实测, gesture.sf=false 后恢复)。
-        // flip1(R8 精简, 上滑执行器被折叠门闸短路)专用。
-        if (isFlip2Device()) {
-            log("SFDeviceGestureHook: SKIP (flip2 原生有上滑手势, 且此 hook 破坏布局重算)")
-            return
-        }
         if (!Config.gestureSf) {
             log("SFDeviceGestureHook: DISABLED by persist.flipunlock.gesture.sf")
             return
@@ -89,6 +81,23 @@ object SFDeviceGestureHook : BaseHook() {
                 if (chain.args[1] == "force_fsg_nav_bar") true else chain.proceed()
             }
             log("SFDeviceGestureHook: ✓ force_fsg_nav_bar → true (NavStubView executor enabled)")
+
+            // ── flip2 布局保护 (2026-08-14) ──
+            // isInSFDeviceFoldedMode→false 让特殊设备(flip2)被判"非折叠" →
+            // DeviceConfigs.updateProfileOnSpecialFDevice 走重算网格分支 → 切换桌面布局偏移
+            // (用户实测; 曾整体 gate 跳过此 hook 但用户确认 flip2 需要上滑手势)。
+            // → flip2 上跳过 updateProfileOnSpecialFDevice(保持 buildConfig 网格, 默认布局已验证正常)。
+            if (isFlip2Device()) {
+                runCatching {
+                    val dcCls = param.classLoader.findClassUp(
+                        "com.miui.home.common.device.DeviceConfigs")
+                    val upd = dcCls.method(
+                        "updateProfileOnSpecialFDevice",
+                        android.content.Context::class.java)
+                    hook(upd) { _ -> null }
+                    log("SFDeviceGestureHook: ✓ updateProfileOnSpecialFDevice skipped (flip2 布局保护)")
+                }.onFailure { log("SFDeviceGestureHook: updateProfileOnSpecialFDevice failed: ${it.message}") }
+            }
         }
     }
 }
