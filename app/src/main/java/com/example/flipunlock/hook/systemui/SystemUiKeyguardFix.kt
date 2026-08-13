@@ -38,6 +38,13 @@ object SystemUiKeyguardFix : BaseHook() {
     override val targetPackages = listOf("com.android.systemui")
 
     override fun setupHooks(param: PackageReadyParam) {
+        // 2026-08-14: flip2 有 Dummy 保护(§38.2), 属性1下走 Dummy 不崩, 不需要强制 inflate;
+        // 且 flip2 SystemUI 的 provider 类名是 AbstractC4516x63c84e27(flip1 是 C4499), 类名漂移。
+        // flip1 专用。误作用在 flip2 上可能破坏锁屏(背景黑/双人脸图标)。
+        if (isFlip2Device()) {
+            log("SystemUiKeyguardFix: SKIP (flip2 有 Dummy 保护, 不需要此守护)")
+            return
+        }
         log("SystemUiKeyguardFix: loading for ${param.packageName}")
         safeHook("SystemUiKeyguardFix") {
             // 真实类名（jadx renamed 注释还原）：ShadeViewProviderModule_Companion_...

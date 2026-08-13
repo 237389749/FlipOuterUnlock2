@@ -29,6 +29,17 @@ internal fun currentProcessName(): String? = runCatching {
     at.getMethod("currentProcessName").invoke(null) as? String
 }.getOrNull()
 
+/** 机型判断: flip1(2405CPX3DC, MIX Flip) / flip2(2505APX7BC, MIX Flip 2)。
+ *  用于区分 flip1 专用 hook(如 SystemUiKeyguardFix, flip2 有 Dummy 保护不需要)。 */
+internal fun deviceModel(): String = runCatching {
+    Class.forName("android.os.SystemProperties")
+        .getDeclaredMethod("get", String::class.java, String::class.java)
+        .invoke(null, "ro.product.model", "") as? String
+}.getOrNull() ?: ""
+
+internal fun isFlip1Device(): Boolean = deviceModel().startsWith("2405")
+internal fun isFlip2Device(): Boolean = deviceModel().startsWith("2505")
+
 /** 进程主 classLoader（systemui 等 persistent 进程在 pkg=android 回调时,
  *  param.classLoader 是系统框架,不含 APK 类——用进程 Application 的 classLoader 替代）。 */
 internal fun processClassLoader(fallback: ClassLoader): ClassLoader {
