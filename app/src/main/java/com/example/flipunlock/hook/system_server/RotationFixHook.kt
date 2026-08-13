@@ -8,17 +8,19 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *
  * 根因（属性 1 → system_server isFlipDevice=false 的三重副作用）：
  *   ① DisplayRotationStubImpl.needEnableSensor() 恒 false → 方向传感器永不启用 → 转设备方向不变
- *      （大部分 app 转不动的根因）
+ *      （大部分 app 转不动的根因；属性 4 原生 true = isFlipDevice && isDisplayFolded
+ *        && mUserRotationModeOuter==0，§43.7.1）
  *   ② mUserRotationModeOuter = isFlipDevice ? 0(FREE) : 1(LOCKED) → LOCKED → accelerometer_rotation=0
  *      （折叠切换 DoubleSwitch 会把外屏锁死）
  *   ③ MiuiOrientationImpl.getOrientationMode 折叠+非flip → return -1 → 系统 UI 回退 manifest portrait
  *
  * 修复（三层）：
- *   ③ needEnableSensor() → true（传感器启用，大部分 app 旋转恢复）
- *   ① DisplayRotation.setUserRotation(int,int,String) → 仅 caller=DoubleSwitch（折叠切换）LOCKED→FREE
- *      （其他调用如磁贴/手动锁定正常 proceed，避免磁贴切锁定失效）
+ *   ③ needEnableSensor() → true（传感器启用，重建属性 4 的原生 flip 行为，大部分 app 旋转恢复）
+ *   ① DisplayRotation.setUserRotation(int,int,String) → LOCKED→FREE（无条件，用户接受磁贴副作用）
  *   ② DisplayRotationStubImpl.setUserRotation(int,int) → LOCKED→FREE（次路径）
  *   + MiuiOrientationImpl.getOrientationMode -1→3（外屏折叠态，系统 UI 旋转，§43.2.1）
+ *
+ * 依赖：全部在 system_server，回调不稳定时（§43.7.2）可能整体不生效。
  *
  * 进程：system_server。
  */
