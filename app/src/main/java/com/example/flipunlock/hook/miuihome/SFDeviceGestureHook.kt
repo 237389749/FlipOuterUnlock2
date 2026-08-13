@@ -49,6 +49,14 @@ object SFDeviceGestureHook : BaseHook() {
     override val targetPackages = listOf("com.miui.home")
 
     override fun setupHooks(param: PackageReadyParam) {
+        // 2026-08-14: flip2 原生有外屏上滑手势, 不需要此 hook; 且强制
+        // isInSFDeviceFoldedMode→false 会触发 DeviceConfigs.updateProfileOnSpecialFDevice
+        // (flip2 是特殊设备, 非折叠 → 重算网格) → 切换布局偏移(用户实测, gesture.sf=false 后恢复)。
+        // flip1(R8 精简, 上滑执行器被折叠门闸短路)专用。
+        if (isFlip2Device()) {
+            log("SFDeviceGestureHook: SKIP (flip2 原生有上滑手势, 且此 hook 破坏布局重算)")
+            return
+        }
         if (!Config.gestureSf) {
             log("SFDeviceGestureHook: DISABLED by persist.flipunlock.gesture.sf")
             return
