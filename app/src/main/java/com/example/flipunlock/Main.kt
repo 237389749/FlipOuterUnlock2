@@ -1,23 +1,13 @@
 package com.example.flipunlock
 
 import com.example.flipunlock.hook.BaseHook
-import com.example.flipunlock.hook.aod.AodHook
-import com.example.flipunlock.hook.identity.DeviceIdentityHook
-import com.example.flipunlock.hook.identity.ScreenTypeHook
-import com.example.flipunlock.hook.fliphome.RecentsCacheFix
-import com.example.flipunlock.hook.fliphome.WidgetRemove
-import com.example.flipunlock.hook.fliphome.WidgetTouchPassthrough
-import com.example.flipunlock.hook.system_server.AppContinuity
+import com.example.flipunlock.hook.identity.CameraCutoutFixHook
+import com.example.flipunlock.hook.miuihome.SFDeviceGestureHook
 import com.example.flipunlock.hook.system_server.AppFullscreen
-import com.example.flipunlock.hook.system_server.AppRestriction
-import com.example.flipunlock.hook.system_server.AppWhitelist
 import com.example.flipunlock.hook.system_server.CutoutRemove
-import com.example.flipunlock.hook.system_server.SubScreenGesture
-import com.example.flipunlock.hook.systemui.ControlCenterHook
+import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.systemui.FlashlightHook
-import com.example.flipunlock.hook.systemui.StatusBarHook
-import com.example.flipunlock.hook.system_server.InputMethodHook
-import com.example.flipunlock.hook.ime.SogouInputHook
+import com.example.flipunlock.hook.systemui.SystemUiKeyguardFix
 import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.currentProcessName
 import com.example.flipunlock.hook.util.log
@@ -36,24 +26,17 @@ class Main : XposedModule() {
     //     hook's targetPackages against the ready package ("*" = wildcard,
     //     fires on firstPackage only).
     // ──────────────────────────────────────────────────────────────────
+    // 2026-08-13 精简: 只保留 cutout/全屏相关 + Lite 移植 hook, 其余注释
     private val packageHooks = listOf<BaseHook>(
-        // identity/ — device type spoofing (ROOT HOOK, must be first)
-        DeviceIdentityHook,               // isFlipDevice/isFoldDevice/isTinyScreen → false, static field clearing
-        ScreenTypeHook,                   // Configuration.getScreenType → 0 (EXPAND)
-        // fliphome/ — widget overlay
-        WidgetRemove,                   // widget overlay complete removal (refreshWindow ADD→REMOVE) — confirmed working
-        RecentsCacheFix,                // 最近任务修复：缓存刷新 + needRemoveTask过滤绕过
-        // WidgetTouchPassthrough,      // FLAG_NOT_TOUCHABLE verified applied via dumpsys, yet touches are STILL
-        //                              // intercepted → a second MIUI input mechanism reserves the region while the
-        //                              // overlay window exists; flag-only passthrough is insufficient. Kept for reference.
-        // aod/ — always-on display on the outer screen (app side: DreamService + runtime DozeMachine)
-        AodHook,                        // #5 cutout hook now scoped to AOD call path only
-        // systemui/ — SystemUI process hooks
-        FlashlightHook,                 // bypass "flip to turn on flashlight" on outer screen
-        ControlCenterHook,              // restore normal (non-compact) control center style
-        StatusBarHook,                  // expand notification icon limit on outer screen
-        // ime/ — Sogou IME process
-        SogouInputHook,                 // IME toolbar + clipboard fix (DexKit)
+        FlashlightHook,                 // 控制中心手电筒: 跳过翻转对话框/传感器等待(Lite)
+        SFDeviceGestureHook,            // 外屏上滑手势: isInSFDeviceFoldedMode→false + force_fsg_nav_bar→true(Lite)
+        SystemUiKeyguardFix,            // systemui 崩溃环兜底: providesTinyKeyguardViewPager 强制 inflate(Lite)
+        // CameraCutoutFixHook,         // 相机 NPE 防御 —— 由 CutoutRemove.hookApp(camera) 已覆盖, 不重复
+        // DeviceIdentityHook,          // [OFF] 属性层模块已覆盖身份
+        // ScreenTypeHook,              // [OFF]
+        // WidgetRemove, RecentsCacheFix, // [OFF] fliphome
+        // AodHook, ControlCenterHook, StatusBarHook, // [OFF] systemui
+        // SogouInputHook,              // [OFF] IME
     )
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
@@ -64,14 +47,16 @@ class Main : XposedModule() {
 
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
         log("Main: onSystemServerStarting — process=${currentProcessName()}")
-        AppRestriction.hook(param)
-        AppWhitelist.hook(param)
-        CutoutRemove.hook(param)
-        AppFullscreen.hook(param)
-        AppContinuity.hook(param)
-        AodHook.hookFramework(param)    // #5 cutout hook now scoped to AOD call path only
-        SubScreenGesture.hook(param)      // double-tap-to-sleep on outer screen
-        InputMethodHook.hook(param)        // IME freedom: allow any rotation, unlock IME choice
+        // [2026-08-13 精简] 其余 system_server hooks 注释:
+        // AppRestriction.hook(param)      // [OFF] 外屏启动限制(待重新定位门闸)
+        // AppWhitelist.hook(param)        // [OFF]
+        CutoutRemove.hook(param)           // cutout 清零(保留,已验证生效)
+        AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
+        // AppContinuity.hook(param)       // [OFF]
+        // AodHook.hookFramework(param)    // [OFF]
+        // SubScreenGesture.hook(param)    // [OFF]
+        // InputMethodHook.hook(param)     // [OFF]
+        RotationFixHook.hook(param)        // 旋转解除(Lite 移植): MiuiOrientationImpl 折叠态开放旋转
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
@@ -84,10 +69,10 @@ class Main : XposedModule() {
         // so camera gets real cutout data (bounds) for layout calculations.
         if (param.packageName == "com.android.camera") {
             log("Main: loading CutoutRemove.hookApp for camera (real cutout preserved)")
-            CutoutRemove.hookApp(param)
+            CutoutRemove.hookApp(param)   // 相机 NPE 防御(保留)
         }
         // App-side size-compat disable (complements AppFullscreen system_server hooks)
-        AppFullscreen.hookApp(param)
+        AppFullscreen.hookApp(param)      // app 端全屏(保留)
         packageHooks.forEach { hook ->
             val isWildcard = hook.targetPackages.contains("*")
             val isTargeted = hook.targetPackages.contains(param.packageName)

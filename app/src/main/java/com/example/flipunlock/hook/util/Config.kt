@@ -91,6 +91,8 @@ object Config {
         "persist.flipunlock.app.continuity",
         "persist.flipunlock.gesture.home",
         "persist.flipunlock.gesture.back",
+        "persist.flipunlock.gesture.sf",
+        "persist.flipunlock.rotation.fix",
         "persist.flipunlock.ui.lockscreen",
         "persist.flipunlock.ui.widget",
         "persist.flipunlock.ui.controlcenter",
@@ -115,6 +117,10 @@ object Config {
     // Gesture — keep together
     val gestureHome: Boolean get() = enabled && raw("persist.flipunlock.gesture.home", true)
     val gestureBack: Boolean get() = enabled && raw("persist.flipunlock.gesture.back", true)
+    // SFDeviceGestureHook(外屏上滑手势执行器)开关
+    val gestureSf: Boolean get() = enabled && raw("persist.flipunlock.gesture.sf", true)
+    // RotationFixHook(旋转解除)开关
+    val rotationFix: Boolean get() = enabled && raw("persist.flipunlock.rotation.fix", true)
 
     // UI
     val uiLockScreen: Boolean get() = enabled && raw("persist.flipunlock.ui.lockscreen", true)

@@ -29,6 +29,17 @@ internal fun currentProcessName(): String? = runCatching {
     at.getMethod("currentProcessName").invoke(null) as? String
 }.getOrNull()
 
+/** 进程主 classLoader（systemui 等 persistent 进程在 pkg=android 回调时,
+ *  param.classLoader 是系统框架,不含 APK 类——用进程 Application 的 classLoader 替代）。 */
+internal fun processClassLoader(fallback: ClassLoader): ClassLoader {
+    return runCatching {
+        val at = Class.forName("android.app.ActivityThread")
+        val app = at.getMethod("currentApplication").invoke(null)
+        val cl = app?.javaClass?.getMethod("getClassLoader")?.invoke(app) as? ClassLoader
+        cl
+    }.getOrNull() ?: fallback
+}
+
 internal fun log(msg: String, e: Throwable? = null) {
     // Use android.util.Log directly — LSPosed module.log() may not go to logcat
     if (e != null) Log.e(LOG_TAG, msg, e) else Log.e(LOG_TAG, msg)
