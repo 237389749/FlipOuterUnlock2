@@ -93,6 +93,7 @@ object Config {
         "persist.flipunlock.gesture.back",
         "persist.flipunlock.gesture.sf",
         "persist.flipunlock.rotation.fix",
+        "persist.flipunlock.wallpaper.fix",
         "persist.flipunlock.ui.lockscreen",
         "persist.flipunlock.ui.widget",
         "persist.flipunlock.ui.controlcenter",
@@ -121,6 +122,8 @@ object Config {
     val gestureSf: Boolean get() = enabled && raw("persist.flipunlock.gesture.sf", true)
     // RotationFixHook(旋转解除)开关
     val rotationFix: Boolean get() = enabled && raw("persist.flipunlock.rotation.fix", true)
+    // WallpaperFixHook(壁纸尺寸钳制, 修开机壁纸右侧黑)开关
+    val wallpaperFix: Boolean get() = enabled && raw("persist.flipunlock.wallpaper.fix", true)
 
     // UI
     val uiLockScreen: Boolean get() = enabled && raw("persist.flipunlock.ui.lockscreen", true)
