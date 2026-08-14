@@ -69,6 +69,11 @@ object AodHook : BaseHook() {
     // ── Framework side (system_server) ──────────────────────────────────
 
     fun hookFramework(param: SystemServerStartingParam) {
+        // 2026-08-14 机型 gate: flip2 AOD 正常显示, 不需要本 hook(OS3.1 AOD 逻辑不同)
+        if (isFlip2Device()) {
+            log("AodHook(framework): SKIP (flip2 AOD 正常)")
+            return
+        }
         if (!Config.displayAod) {
             log("AodHook: DISABLED by persist.flipunlock.display.aod")
             return
@@ -126,6 +131,11 @@ object AodHook : BaseHook() {
 
     override fun setupHooks(param: PackageReadyParam) {
         if (!Config.displayAod) return
+        // 2026-08-14 机型 gate: flip2 AOD 正常显示, 不需要本 hook
+        if (isFlip2Device()) {
+            log("AodHook(app): SKIP (flip2 AOD 正常)")
+            return
+        }
         // When pkg="android", only proceed if we're actually inside systemui / miui.aod.
         // This avoids installing app-side hooks in system_server or unrelated app processes.
         if (param.packageName == "android") {

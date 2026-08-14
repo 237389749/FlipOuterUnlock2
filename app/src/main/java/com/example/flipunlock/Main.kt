@@ -1,6 +1,7 @@
 package com.example.flipunlock
 
 import com.example.flipunlock.hook.BaseHook
+import com.example.flipunlock.hook.aod.AodHook
 import com.example.flipunlock.hook.identity.CameraCutoutFixHook
 import com.example.flipunlock.hook.miuihome.SFDeviceGestureHook
 import com.example.flipunlock.hook.system_server.AppFullscreen
@@ -39,6 +40,7 @@ class Main : XposedModule() {
         SFDeviceGestureHook,            // 外屏上滑手势: isInSFDeviceFoldedMode→false + force_fsg_nav_bar→true(Lite)
         SystemUiKeyguardFix,            // systemui 崩溃环兜底: providesTinyKeyguardViewPager 强制 inflate(Lite, flip1 only)
         QSTileMinCountFixHook,          // 控制中心编辑磁贴下限→0(重写双保险, flip1/2 通用)
+        AodHook,                        // AOD 外屏显示(flip1 only; #3/#5/Layer2 状态重定向)
         // CameraCutoutFixHook,         // 相机 NPE 防御 —— 由 CutoutRemove.hookApp(camera) 已覆盖, 不重复
         // DeviceIdentityHook,          // [OFF] 属性层模块已覆盖身份
         // ScreenTypeHook,              // [OFF]
@@ -72,6 +74,7 @@ class Main : XposedModule() {
         // InputMethodHook.hook(param)     // [OFF]
         RotationFixHook.hook(param)        // 旋转解除(Lite 移植): MiuiOrientationImpl 折叠态开放旋转
         WallpaperFixHook.hook(param)       // 壁纸尺寸钳制: 修开机壁纸右侧黑(display1 内屏仍枚举竞态)
+        AodHook.hookFramework(param)       // AOD 外屏显示(flip1 only, flip2 正常; #3 状态→4)
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
