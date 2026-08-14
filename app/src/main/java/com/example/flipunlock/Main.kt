@@ -12,6 +12,7 @@ import com.example.flipunlock.hook.system_server.DisplayStateHook
 import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.WallpaperFixHook
+import com.example.flipunlock.hook.camera.CameraFixHook
 import com.example.flipunlock.hook.systemui.FlashlightHook
 import com.example.flipunlock.hook.systemui.FlashlightStateHook
 import com.example.flipunlock.hook.systemui.QSTileMinCountFixHook
@@ -45,6 +46,7 @@ class Main : XposedModule() {
         QSTileMinCountFixHook,          // 控制中心编辑磁贴下限→0(重写双保险, flip1/2 通用)
         AodHook,                        // AOD 外屏显示(flip1 only; #3/#5/Layer2 状态重定向)
         Flip1AodIdentityHook,           // flip1 所有进程 isFlipDevice→false(手电筒弹窗根因: SystemUI ①实际true)
+        CameraFixHook,                  // 相机进程内 multi_display_type→4: 修 flip2 外屏相机倒置+3:4黑边(属性1副作用)
         // CameraCutoutFixHook,         // 相机 NPE 防御 —— 由 CutoutRemove.hookApp(camera) 已覆盖, 不重复
         // DeviceIdentityHook,          // [OFF] 属性层模块已覆盖身份
         // ScreenTypeHook,              // [OFF]
