@@ -6,6 +6,7 @@ import com.example.flipunlock.hook.miuihome.SFDeviceGestureHook
 import com.example.flipunlock.hook.system_server.AppFullscreen
 import com.example.flipunlock.hook.system_server.AppRestriction
 import com.example.flipunlock.hook.system_server.CutoutRemove
+import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.WallpaperFixHook
 import com.example.flipunlock.hook.systemui.FlashlightHook
@@ -56,6 +57,7 @@ class Main : XposedModule() {
         // flip2 system_server 注入正常(§34.7)可生效; flip1 断路(§43.6.1)装不上, 无影响。
         AppRestriction.hook(param)           // 外屏启动限制解除(通知点击拦截门)
         CutoutRemove.hook(param)             // cutout 清零(保留,已验证生效)
+        Flip2CutoutLetterboxHook.hook(param) // flip2 letterbox 豁免双保险(FLIP2 gate, §34.3)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
         // AppContinuity.hook(param)       // [OFF]
         // AodHook.hookFramework(param)    // [OFF]
