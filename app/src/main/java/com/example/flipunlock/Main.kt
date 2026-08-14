@@ -89,9 +89,11 @@ class Main : XposedModule() {
             log("Main: onPackageReady IN SYSTEM_SERVER pkg=${param.packageName} first=${param.isFirstPackage}")
         }
         log("Main: onPackageReady pkg=${param.packageName} first=${param.isFirstPackage} proc=$proc")
-        // Camera process: CutoutRemove.hookApp(camera) 相机 cutout 防御 —— 仅 flip1(用户实测 flip2 不需要)
-        if (param.packageName == "com.android.camera" && isFlip1Device()) {
-            log("Main: loading CutoutRemove.hookApp for camera (flip1)")
+        // Camera process: CutoutRemove.hookApp(camera) 相机 cutout 防御(flip1/flip2 都启用)
+        // flip1: 防 NPE(用户实测无守护闪退); flip2: CameraFixHook(属性→4)恢复 flip 布局后,
+        //   flip 路径 j3.t.p 读 getCutout() 的 rect → 需非 null cutout 防 NPE(00f1167 实测闪退, 恢复 642f418)
+        if (param.packageName == "com.android.camera") {
+            log("Main: loading CutoutRemove.hookApp for camera")
             CutoutRemove.hookApp(param)
         }
         // App-side size-compat disable (complements AppFullscreen system_server hooks)
