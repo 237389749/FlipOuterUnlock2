@@ -4,6 +4,7 @@ import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.identity.CameraCutoutFixHook
 import com.example.flipunlock.hook.miuihome.SFDeviceGestureHook
 import com.example.flipunlock.hook.system_server.AppFullscreen
+import com.example.flipunlock.hook.system_server.AppRestriction
 import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.WallpaperFixHook
@@ -48,10 +49,11 @@ class Main : XposedModule() {
 
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
         log("Main: onSystemServerStarting — process=${currentProcessName()}")
-        // [2026-08-13 精简] 其余 system_server hooks 注释:
-        // AppRestriction.hook(param)      // [OFF] 外屏启动限制(待重新定位门闸)
-        // AppWhitelist.hook(param)        // [OFF]
-        CutoutRemove.hook(param)           // cutout 清零(保留,已验证生效)
+        // [2026-08-14] AppRestriction 重新启用: flip2 通知点击"请在内屏打开"的拦截门
+        // (InterceptActivityController.isInterceptListUnCheckFold, 独立于身份, 云端 INTERCEPT_LIST)。
+        // flip2 system_server 注入正常(§34.7)可生效; flip1 断路(§43.6.1)装不上, 无影响。
+        AppRestriction.hook(param)           // 外屏启动限制解除(通知点击拦截门)
+        CutoutRemove.hook(param)             // cutout 清零(保留,已验证生效)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
         // AppContinuity.hook(param)       // [OFF]
         // AodHook.hookFramework(param)    // [OFF]
