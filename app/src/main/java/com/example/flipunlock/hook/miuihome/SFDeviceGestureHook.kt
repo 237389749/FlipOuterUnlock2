@@ -91,6 +91,7 @@ object SFDeviceGestureHook : BaseHook() {
                 runCatching {
                     val dcCls = param.classLoader.findClassUp(
                         "com.miui.home.common.device.DeviceConfigs")
+                        ?: return@runCatching
                     val upd = dcCls.method(
                         "updateProfileOnSpecialFDevice",
                         android.content.Context::class.java)
@@ -106,6 +107,7 @@ object SFDeviceGestureHook : BaseHook() {
                 runCatching {
                     val recCls = param.classLoader.findClassUp(
                         "com.miui.home.recents.BaseRecentsImpl")
+                        ?: return@runCatching
                     hook(recCls.method("removeNavStubView")) { _ -> null }
                     hook(recCls.method("clearBackStubWindow")) { _ -> null }
                     log("SFDeviceGestureHook: ✓ removeNavStubView/clearBackStubWindow no-op (flip2 手势防消失)")
