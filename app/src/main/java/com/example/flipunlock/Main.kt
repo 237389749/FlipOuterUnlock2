@@ -57,9 +57,11 @@ class Main : XposedModule() {
         // (InterceptActivityController.isInterceptListUnCheckFold, 独立于身份, 云端 INTERCEPT_LIST)。
         // flip2 system_server 注入正常(§34.7)可生效; flip1 断路(§43.6.1)装不上, 无影响。
         AppRestriction.hook(param)           // 外屏启动限制解除(通知点击拦截门)
-        // CutoutRemove.hook(param)          // [2026-08-14 注释] cutout 清零停用(用户决定, 属性层通杀;
-        //                                   //  flip2 由 Flip2CutoutLetterboxHook 豁免 letterbox, 保留 cutout 数据)
-        Flip2CutoutLetterboxHook.hook(param) // flip2 letterbox 豁免双保险(FLIP2 gate, §34.3)
+        // CutoutRemove: flip2 恢复(清零 cutout 数据→挖孔消除); flip1 属性层通杀不需要(2026-08-14 用户确认)
+        if (isFlip2Device()) {
+            CutoutRemove.hook(param)
+        }
+        // Flip2CutoutLetterboxHook.hook(param)  // [2026-08-14 注释] flip2 有 CutoutRemove 清零即可, letterbox 豁免不需要
         DisplayStateHook.hook(param)         // DeviceState 钉死: 1b 恒布局 + getCurrentState(flip2→6 双屏/ flip1→0 外屏)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
         // AppContinuity.hook(param)       // [OFF]
@@ -76,11 +78,11 @@ class Main : XposedModule() {
             log("Main: onPackageReady IN SYSTEM_SERVER pkg=${param.packageName} first=${param.isFirstPackage}")
         }
         log("Main: onPackageReady pkg=${param.packageName} first=${param.isFirstPackage} proc=$proc")
-        // Camera process: CutoutRemove.hookApp(camera) 相机 NPE 防御随 cutout 清零一并停用(2026-08-14)
-        // if (param.packageName == "com.android.camera") {
-        //     log("Main: loading CutoutRemove.hookApp for camera (real cutout preserved)")
-        //     CutoutRemove.hookApp(param)
-        // }
+        // Camera process: CutoutRemove.hookApp(camera) 相机 NPE 防御 —— flip2 随 CutoutRemove 恢复
+        if (param.packageName == "com.android.camera" && isFlip2Device()) {
+            log("Main: loading CutoutRemove.hookApp for camera (flip2)")
+            CutoutRemove.hookApp(param)
+        }
         // App-side size-compat disable (complements AppFullscreen system_server hooks)
         AppFullscreen.hookApp(param)      // app 端全屏(保留)
         packageHooks.forEach { hook ->
