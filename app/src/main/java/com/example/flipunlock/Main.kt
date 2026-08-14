@@ -34,7 +34,7 @@ class Main : XposedModule() {
     // ──────────────────────────────────────────────────────────────────
     // 2026-08-13 精简: 只保留 cutout/全屏相关 + Lite 移植 hook, 其余注释
     private val packageHooks = listOf<BaseHook>(
-        FlashlightHook,                 // 控制中心手电筒: 跳过翻转对话框/传感器等待(Lite)
+        // FlashlightHook,                 // [2026-08-14 注释] 手电筒翻转提示跳过 — 改由 getCurrentState 全局 hook 验证(DisplayStateHook ②)
         SFDeviceGestureHook,            // 外屏上滑手势: isInSFDeviceFoldedMode→false + force_fsg_nav_bar→true(Lite)
         SystemUiKeyguardFix,            // systemui 崩溃环兜底: providesTinyKeyguardViewPager 强制 inflate(Lite, flip1 only)
         QSTileMinCountFixHook,          // 控制中心编辑磁贴下限→0(重写双保险, flip1/2 通用)

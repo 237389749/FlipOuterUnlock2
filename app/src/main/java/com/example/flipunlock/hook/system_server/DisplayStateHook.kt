@@ -52,14 +52,16 @@ object DisplayStateHook {
                 log("DisplayStateHook: ✓ DeviceStateToLayoutMap.get 按 state 分支(3→原生, 其他→外屏)")
             }.onFailure { log("DisplayStateHook: ① DeviceStateToLayoutMap.get failed: ${it.message}") }
 
-            // ── getCurrentState: 注释(2026-08-14 终版) ──
-            // 状态保持真实(sensor 驱动), 不恒 6; 手电筒等折叠判定由 FlashlightHook 处理。
-            // runCatching {
-            //     val cls = param.classLoader.loadClass(
-            //         "com.android.server.devicestate.DeviceStateManagerService")
-            //     val m = cls.method("getCurrentState")
-            //     hook(m, replaceResult(6))
-            // }.onFailure { ... }
+            // ── getCurrentState: 全局返回 6(2026-08-14 实验: 替代 FlashlightHook) ──
+            // 手电筒等 getCurrentState()==0 折叠判定消费点看到 6 → 不提示。
+            // ⚠️ 实验: 影响所有读该值的进程(方向/continuity/SystemUI), 验证后评估去留。
+            runCatching {
+                val cls = param.classLoader.loadClass(
+                    "com.android.server.devicestate.DeviceStateManagerService")
+                val m = cls.method("getCurrentState")
+                hook(m, replaceResult(6))
+                log("DisplayStateHook: ✓ getCurrentState → 6 (全局, 替代 FlashlightHook 实验)")
+            }.onFailure { log("DisplayStateHook: ② getCurrentState failed: ${it.message}") }
         }
     }
 }
