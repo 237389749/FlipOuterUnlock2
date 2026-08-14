@@ -4,26 +4,19 @@ import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 
 /**
- * DeviceState 双管齐下（2026-08-14）: 钉死 display 布局 + 改物理折叠判定返回值。
+ * DeviceState 布局按状态分支（2026-08-14 终版）: 除全展开(state 3)外, 外屏都亮。
  *
- * 逻辑链(flip2 实机 XML + refMD §23):
- *   xiaomi.sensor.flip_status → device_state_configuration.xml → DeviceStateManagerService
- *     → DeviceStateCallback.onDeviceStateChanged → LogicalDisplayMapper.setDeviceStateLocked
- *       → DeviceStateToLayoutMap.get(state) → display_layout_configuration.xml
- *         → applyLayoutLocked() → enable/disable display(port 956=外屏 / 955=内屏)
+ * 用户实测演进:
+ *   初版(恒 state 6 双屏外屏主导, d284c51/c431035) → 双屏同显实现, 但"以外屏为主屏"体验不适合。
+ *   终版: DeviceStateToLayoutMap.get(state) 按 state 分支:
+ *     state == 3 (OPENED 全展开) → 原生布局(内屏亮)
+ *     其他 state (0 折叠/1 帐篷/2 半开/4 反展...) → 恒 state 0 布局(外屏亮, 内屏 off)
+ *   → 半展开/半折叠/折叠时外屏都能亮; 只有全展开才切内屏。
  *
- * 双 hook:
- *   ① 1b: DeviceStateToLayoutMap.get(int) 恒返回目标 state 的 Layout
- *        flip2 → state 6(双屏, 外屏 default + 内屏跟随) → 任何角度/折叠态都双屏开, 外屏主屏
- *        flip1 → state 0(仅外屏, 内屏已拆) → 任何状态只外屏
- *   ② getCurrentState(system_server 服务端, 全局): 返回目标 state
- *        手电筒等 getCurrentState()==0 的折叠判定消费点看到非折叠 → 提示消失
- *        flip2 → 6(双屏); flip1 不动(恒折叠, 手电筒提示由 FlashlightHook 处理)
+ * getCurrentState 注释(不 hook): 状态保持真实(sensor 驱动), 手电筒等折叠判定
+ *   消费点由 FlashlightHook 方法级拦截处理; 避免"系统认为双屏"的副作用。
  *
- * 风险(已知): 状态机仍真实(回调/唤醒仍按真实折叠), 只影响"读 getCurrentState"的消费点;
- *   flip2 展开时外屏变主屏(双屏)需实测视觉/触摸路由。
- *
- * 开关: persist.flipunlock.display.state(默认 true, 风险高可关回退)。
+ * 开关: persist.flipunlock.display.state(默认 true)。
  * 进程: system_server。
  */
 object DisplayStateHook {
@@ -33,35 +26,40 @@ object DisplayStateHook {
             log("DisplayStateHook: DISABLED by persist.flipunlock.display.state")
             return
         }
-        val target = 6   // 双屏展开(flip1/flip2 统一; flip1 内屏已拆 enable 空屏, 用户确认测试)
-        log("DisplayStateHook: setting up (target state=$target, flip2=${isFlip2Device()})")
+        log("DisplayStateHook: setting up (除全展开外屏亮)")
         safeHook("DisplayStateHook") {
-            // ── ① DeviceStateToLayoutMap.get(int) → 恒返回目标 state 布局 ──
+            // ── DeviceStateToLayoutMap.get(state) → state 3 原生, 其他恒外屏(state 0 布局) ──
             runCatching {
                 val cls = param.classLoader.loadClass(
                     "com.android.server.display.DeviceStateToLayoutMap")
                 val get = cls.method("get", Int::class.javaPrimitiveType!!)
-                var cached: Any? = null
+                var cachedOuter: Any? = null
                 hook(get) { chain ->
-                    cached ?: run {
-                        // 首次用目标 state 查原 map, 缓存后恒返回(布局 map 启动时加载一次, 不变)
-                        val layout = chain.proceed(arrayOf<Any?>(target))
-                        cached = layout
-                        log("DisplayStateHook: ✓ DeviceStateToLayoutMap.get → state=$target (layout cached)")
-                        layout
+                    val state = chain.args[0] as? Int ?: return@hook chain.proceed()
+                    if (state == 3) {
+                        // OPENED 全展开: 原生布局(内屏亮)
+                        chain.proceed()
+                    } else {
+                        // 其他状态(折叠/帐篷/半开/反展): 恒 state 0 布局(外屏亮, 内屏 off)
+                        cachedOuter ?: run {
+                            val layout = chain.proceed(arrayOf<Any?>(0))
+                            cachedOuter = layout
+                            log("DisplayStateHook: ✓ 非展开状态(state=$state) → 外屏布局(state 0)")
+                            layout
+                        }
                     }
                 }
-                log("DisplayStateHook: ✓ DeviceStateToLayoutMap.get → state=$target (恒布局)")
+                log("DisplayStateHook: ✓ DeviceStateToLayoutMap.get 按 state 分支(3→原生, 其他→外屏)")
             }.onFailure { log("DisplayStateHook: ① DeviceStateToLayoutMap.get failed: ${it.message}") }
 
-            // ── ② DeviceStateManagerService.getCurrentState() → 返回目标 state ──
-            runCatching {
-                val cls = param.classLoader.loadClass(
-                    "com.android.server.devicestate.DeviceStateManagerService")
-                val m = cls.method("getCurrentState")
-                hook(m, replaceResult(target))
-                log("DisplayStateHook: ✓ getCurrentState → $target (全局, 折叠判定消费点失效)")
-            }.onFailure { log("DisplayStateHook: ② getCurrentState failed: ${it.message}") }
+            // ── getCurrentState: 注释(2026-08-14 终版) ──
+            // 状态保持真实(sensor 驱动), 不恒 6; 手电筒等折叠判定由 FlashlightHook 处理。
+            // runCatching {
+            //     val cls = param.classLoader.loadClass(
+            //         "com.android.server.devicestate.DeviceStateManagerService")
+            //     val m = cls.method("getCurrentState")
+            //     hook(m, replaceResult(6))
+            // }.onFailure { ... }
         }
     }
 }
