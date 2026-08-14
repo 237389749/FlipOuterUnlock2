@@ -44,7 +44,7 @@ class Main : XposedModule() {
         SystemUiKeyguardFix,            // systemui 崩溃环兜底: providesTinyKeyguardViewPager 强制 inflate(Lite, flip1 only)
         QSTileMinCountFixHook,          // 控制中心编辑磁贴下限→0(重写双保险, flip1/2 通用)
         AodHook,                        // AOD 外屏显示(flip1 only; #3/#5/Layer2 状态重定向)
-        // Flip1AodIdentityHook,        // [2026-08-14 实验注释] isFlipDevice true/false 均非根因(AOD 时钟正常), 回 AodHook
+        Flip1AodIdentityHook,           // flip1 所有进程 isFlipDevice→false(手电筒弹窗根因: SystemUI ①实际true)
         // CameraCutoutFixHook,         // 相机 NPE 防御 —— 由 CutoutRemove.hookApp(camera) 已覆盖, 不重复
         // DeviceIdentityHook,          // [OFF] 属性层模块已覆盖身份
         // ScreenTypeHook,              // [OFF]
