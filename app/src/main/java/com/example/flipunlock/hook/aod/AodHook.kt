@@ -268,7 +268,11 @@ object AodHook : BaseHook() {
 
     // ── #3/#4 framework DreamService (visible from SystemUI) ──
     private fun hookDreamService(classLoader: ClassLoader) {
-        // #3 setDozeScreenState(int): block OFF states {0,1,3} → 4 (AOD ON); pass {2,4}.
+        // #3 setDozeScreenState(int): 全状态强制 2(ON 亮屏) —— FlipOuterUnlock 最旧版方案
+        // 旧版注释: DozeScreenState 有 6s mResetScreenTask 超时, INITIALIZED→DOZE_AOD 后调
+        // setDozeScreenState(1); 阻塞所有 OFF 状态(0,1,3)并强制 2(ON); 4(AOD ON)也改 2,
+        // 避免复位超时振荡。AOD 内容渲染在"亮屏 ON"状态 → 物理屏必亮(flip1 实测 4 方案不亮)。
+        // 值: 0=FINISH 1=DOZE 2=ON/PULSING 3=DOZE_SUSPEND 4=DOZE_AOD
         runCatching {
             val method = android.service.dreams.DreamService::class.java
                 .getDeclaredMethod("setDozeScreenState", Int::class.javaPrimitiveType!!)
@@ -276,14 +280,14 @@ object AodHook : BaseHook() {
             hook(method) { chain ->
                 val state = chain.args[0] as? Int ?: return@hook chain.proceed()
                 when (state) {
-                    0, 1, 3 -> {
-                        log("AodHook: #3 setDozeScreenState($state) → 4 (AOD ON)")
-                        chain.proceed(arrayOf<Any?>(4))
+                    0, 1, 3, 4 -> {
+                        log("AodHook: #3 setDozeScreenState($state) → 2 (ON 亮屏, 旧版方案)")
+                        chain.proceed(arrayOf<Any?>(2))
                     }
-                    else -> chain.proceed()   // 2 (ON), 4 (AOD ON) pass through
+                    else -> chain.proceed()   // 2 (ON) pass through
                 }
             }
-            log("AodHook: #3 DreamService.setDozeScreenState hooked")
+            log("AodHook: #3 DreamService.setDozeScreenState hooked [旧版: →2 亮屏]")
         }.onFailure { log("AodHook: #3 setDozeScreenState failed", it) }
 
         // #4 onDreamingStarted(): one-shot trigger for the runtime (Layer 2) hooks.
@@ -340,7 +344,7 @@ object AodHook : BaseHook() {
         }.onFailure { log("AodHook/L2: requestState hook failed", it) }
     }
 
-    // DozeService.setDozeScreenState(int): same map as #3 ({0,1,3}→4).
+    // DozeService.setDozeScreenState(int): 同 #3 —— 全状态强制 2(ON 亮屏, 旧版方案).
     private fun hookDozeServiceSetDozeScreenState(dreamService: Any) {
         val dozeService = findObjectByClassName(dreamService, "com.miui.aod.doze.DozeService") ?: return
         runCatching {
@@ -350,11 +354,11 @@ object AodHook : BaseHook() {
             hook(method) { chain ->
                 val s = chain.args[0] as? Int ?: return@hook chain.proceed()
                 when (s) {
-                    0, 1, 3 -> chain.proceed(arrayOf<Any?>(4))
+                    0, 1, 3, 4 -> chain.proceed(arrayOf<Any?>(2))
                     else -> chain.proceed()
                 }
             }
-            log("AodHook/L2: DozeService.setDozeScreenState → 4")
+            log("AodHook/L2: DozeService.setDozeScreenState → 2 (旧版方案)")
         }.onFailure { log("AodHook/L2: DozeService.setDozeScreenState failed", it) }
     }
 
