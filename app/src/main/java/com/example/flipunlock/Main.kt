@@ -13,6 +13,7 @@ import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.WallpaperFixHook
 import com.example.flipunlock.hook.systemui.FlashlightHook
+import com.example.flipunlock.hook.systemui.FlashlightStateHook
 import com.example.flipunlock.hook.systemui.QSTileMinCountFixHook
 import com.example.flipunlock.hook.systemui.SystemUiKeyguardFix
 import com.example.flipunlock.hook.util.Config
@@ -37,7 +38,8 @@ class Main : XposedModule() {
     // ──────────────────────────────────────────────────────────────────
     // 2026-08-13 精简: 只保留 cutout/全屏相关 + Lite 移植 hook, 其余注释
     private val packageHooks = listOf<BaseHook>(
-        // FlashlightHook,                 // [2026-08-14 注释] 手电筒翻转提示跳过 — 改由 getCurrentState 全局 hook 验证(DisplayStateHook ②)
+        // FlashlightHook,                 // [2026-08-14 注释] 手电筒翻转提示跳过 — 新解法探索中(FlashlightStateHook)
+        FlashlightStateHook,            // 新解法: SystemUI 进程 getCurrentState→3(手电筒 ②折叠判定失效)
         SFDeviceGestureHook,            // 外屏上滑手势: isInSFDeviceFoldedMode→false + force_fsg_nav_bar→true(Lite)
         SystemUiKeyguardFix,            // systemui 崩溃环兜底: providesTinyKeyguardViewPager 强制 inflate(Lite, flip1 only)
         QSTileMinCountFixHook,          // 控制中心编辑磁贴下限→0(重写双保险, flip1/2 通用)
