@@ -6,37 +6,39 @@ import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
- * 解除控制中心编辑模式"最少磁贴数"限制（2026-08-14 重写 v3, 修复上一版不生效的两个根因）。
+ * 解除控制中心编辑模式"最少磁贴数"限制（2026-08-15 v4: 12→4, 保留 4 个固定磁贴）。
  *
  * 现象（用户实测）: 控制中心点"编辑"→ 进入磁贴增删模式, 最少磁贴数 12
- *   （quick_settings_min_num_tiles=12 = 4 固定 + 8 可编辑）, 删到下限后"移除"消失（删不动）。
+ *   （quick_settings_min_num_tiles=12 = 4 固定 + 8 可编辑）, 删到 12 个后磁贴右上角
+ *   减号标签消失（删不动）。目标: 可编辑磁贴能删光, 只保留 4 个固定磁贴 → 12 改 4。
  *
- * 逻辑链（b5c1-systemui 反编译, refMD §43.6/43.6.1）:
- *   编辑入口: EditTile("编辑"磁贴)→ handleClick→msg 1001→MiuiQSPanel→MiuiQSCustomizerController.show()
- *     老 View 编辑页(标题"编辑"): MiuiTileAdapter = com.android.systemui.p037qs.customize.MiuiTileAdapter
- *       （R8 混淆包名 p037, b5c1/flip2/common-systemui 三处一致）:
- *       构造(295): mMinNumTiles = getResources().getInteger(quick_settings_min_num_tiles) = 12
- *       长按(386): 若 pos<mEditIndex && mCurrentSpecs.size()>mMinNumTiles 才弹"移动/移除"菜单 → 删不动
- *       拖放(165 canDropOver): size<=mMinNumTiles 时禁止拖出编辑区 → 删不动
- *   Compose 编辑页(EditModeButtonKt→EditModeKt, QSFragmentCompose): 删除=removeTiles 无条件;
- *     MinimumTilesResourceRepository.minNumberOfTiles 同读该资源(Compose pipeline, 兜底)。
+ * 逻辑链（2026-08-15 flip2 设备 dex 反汇编实锤 + b5c1-systemui 反编译）:
+ *   编辑入口: Compose 控制中心"编辑"按钮(EditModeButtonKt)→ EditModeViewModel._isEditing=true
+ *   → EditModeViewModel.tiles 流 → EditModeViewModel$tiles$lambda$10$$inlined$map$1$2.emit()
+ *     读取链(字节级实锤, 4404224-4404256):
+ *       iget-object  this$0.minTilesInteractor            (EditModeViewModel)
+ *       iget-object  v.minimumTilesRepository             (MinimumTilesInteractor)
+ *       iget        v.minNumberOfTiles                    (MinimumTilesResourceRepository = 12)
+ *       iget-object  $editTilesData$inlined.stockTiles     (当前磁贴列表)
+ *     判定: 当前磁贴数 <= minNumberOfTiles(12) → availableEditActions 不含 REMOVE
+ *   → EditTileViewModel.availableEditActions(SetBuilder)
+ *   → EditTileKt(编辑页磁贴 UI): 右上角减号标签 = availableEditActions.contains(REMOVE)
+ *   → 数量 <= 12 → 无 REMOVE → 减号消失（用户实测）✓
  *
- * 上一版(e52e47e)不生效的两个根因（本版已修）:
- *   ① 保险2 类名写成混淆前的 com.android.systemui.qs.customize.MiuiTileAdapter, 真实类是
- *      com.android.systemui.p037qs.customize.MiuiTileAdapter → findClassUp 返回 null → 保险2 从未生效
- *   ② systemui 进程以 pkg=android 回调时 param.classLoader 是框架加载器, 不含 APK 类(§43 已知)
- *      → 用 processClassLoader() 取进程 Application classLoader 替代
- *
- * 修复（三层全防, flip1/2 通用）:
- *   保险1: Resources.getInteger(int) → quick_settings_min_num_tiles → 0（所有读取点通杀）
- *   保险2: 候选类名枚举（MiuiTileAdapter/TileAdapter, p037+无混淆各一）hook 构造 after
- *          反射置 mMinNumTiles=0（field 是 public final, setAccessible 后 setInt）
- *   保险3: MinimumTilesResourceRepository 构造 after 反射置 minNumberOfTiles=0（Compose 兜底）
+ * 修复（v4 四层全防, flip1/2 通用; 目标值 MIN = 4 = 固定磁贴数）:
+ *   保险1: Resources.getInteger(int) → quick_settings_min_num_tiles → 4（资源层源头, 所有读取点通杀）
+ *   保险3: MinimumTilesResourceRepository.<init> after → 反射 minNumberOfTiles = 4
+ *          （字段层源头; 设备真实类名无 R8 混淆包名: com.android.systemui.qs.pipeline...）
+ *   保险4: EditTileViewModel.<init> after → availableEditActions 反射 add(REMOVE)
+ *          （判定层兜底: 源头改不动时直接让减号恒显示）
  * 开关: persist.flipunlock.ui.qstilemin（默认 true）
  */
 object QSTileMinCountFixHook : BaseHook() {
 
     override val targetPackages = listOf("com.android.systemui", "android")
+
+    /** 目标最少磁贴数 = 4 个固定磁贴（亮度/音量、wifi、数据、播放）。 */
+    private const val MIN_TILES = 4
 
     override fun setupHooks(param: PackageReadyParam) {
         if (!Config.qsTileMinCount) {
@@ -52,7 +54,7 @@ object QSTileMinCountFixHook : BaseHook() {
         // systemui 以 pkg=android 回调时 param.classLoader 不含 APK 类 → 取进程 Application classLoader
         val cl = processClassLoader(param.classLoader)
 
-        // ── 保险 1: Resources.getInteger → 0 ──
+        // ── 保险 1: Resources.getInteger → MIN_TILES(4) ──
         safeHook("QSTileMinCountFix.1") {
             runCatching {
                 val resClass = cl.loadClass("android.content.res.Resources")
@@ -62,8 +64,8 @@ object QSTileMinCountFixHook : BaseHook() {
                     val id = chain.args[0] as? Int ?: return@hook chain.proceed()
                     val name = runCatching { res.getResourceName(id) }.getOrNull()
                     if (name != null && name.endsWith("quick_settings_min_num_tiles")) {
-                        log("QSTileMinCountFix: 保险1 $name → 0")
-                        return@hook 0
+                        log("QSTileMinCountFix: 保险1 $name -> $MIN_TILES")
+                        return@hook MIN_TILES
                     }
                     chain.proceed()
                 }
@@ -71,40 +73,11 @@ object QSTileMinCountFixHook : BaseHook() {
             }.onFailure { log("QSTileMinCountFix: 保险1 failed: ${it.message}") }
         }
 
-        // ── 保险 2: 编辑页 Adapter 构造后 mMinNumTiles=0 ──
-        safeHook("QSTileMinCountFix.2") {
-            // R8 混淆包名 p037 + 无混淆两候选, 防版本漂移
-            val adapterCandidates = listOf(
-                "com.android.systemui.p037qs.customize.MiuiTileAdapter",
-                "com.android.systemui.qs.customize.MiuiTileAdapter",
-                "com.android.systemui.p037qs.customize.TileAdapter",
-                "com.android.systemui.qs.customize.TileAdapter",
-            )
-            for (candidate in adapterCandidates) {
-                val cls = runCatching { cl.loadClass(candidate) }.getOrNull() ?: continue
-                val field = runCatching { cls.field("mMinNumTiles") }.getOrNull()
-                    ?: run {
-                        log("QSTileMinCountFix: 保险2 $candidate 无字段 mMinNumTiles, skip")
-                        continue
-                    }
-                val ctor = runCatching { cls.declaredConstructors.firstOrNull() }.getOrNull()
-                if (ctor == null) {
-                    log("QSTileMinCountFix: 保险2 $candidate 无构造, skip")
-                    continue
-                }
-                hook(ctor, after { chain, _ ->
-                    runCatching { field.setInt(chain.thisObject, 0) }
-                        .onFailure { log("QSTileMinCountFix: 保险2 $candidate setInt failed: ${it.message}") }
-                })
-                log("QSTileMinCountFix: ✓ 保险2 ${cls.name}.<init> → mMinNumTiles=0")
-            }
-        }
-
-        // ── 保险 3: MinimumTilesResourceRepository(Compose pipeline)构造后 minNumberOfTiles=0 ──
+        // ── 保险 3: MinimumTilesResourceRepository.<init> after → minNumberOfTiles = MIN_TILES ──
         safeHook("QSTileMinCountFix.3") {
             val repoCandidates = listOf(
-                "com.android.systemui.p037qs.pipeline.data.repository.MinimumTilesResourceRepository",
                 "com.android.systemui.qs.pipeline.data.repository.MinimumTilesResourceRepository",
+                "com.android.systemui.p037qs.pipeline.data.repository.MinimumTilesResourceRepository",
             )
             for (candidate in repoCandidates) {
                 val cls = runCatching { cl.loadClass(candidate) }.getOrNull() ?: continue
@@ -115,10 +88,41 @@ object QSTileMinCountFixHook : BaseHook() {
                     }
                 val ctor = runCatching { cls.declaredConstructors.firstOrNull() }.getOrNull() ?: continue
                 hook(ctor, after { chain, _ ->
-                    runCatching { field.setInt(chain.thisObject, 0) }
+                    runCatching { field.setInt(chain.thisObject, MIN_TILES) }
+                        .onSuccess { log("QSTileMinCountFix: 保险3 ✓ ${cls.name}.<init> → minNumberOfTiles=$MIN_TILES") }
                         .onFailure { log("QSTileMinCountFix: 保险3 $candidate setInt failed: ${it.message}") }
                 })
-                log("QSTileMinCountFix: ✓ 保险3 ${cls.name}.<init> → minNumberOfTiles=0")
+                log("QSTileMinCountFix: 保险3 hooked ${cls.name}")
+            }
+        }
+
+        // ── 保险 4: EditTileViewModel.<init> after → availableEditActions add(REMOVE) ──
+        safeHook("QSTileMinCountFix.4") {
+            val editTileCandidates = listOf(
+                "com.android.systemui.qs.panels.ui.viewmodel.EditTileViewModel",
+                "com.android.systemui.p037qs.panels.p041ui.viewmodel.EditTileViewModel",
+            )
+            val actionsClsName = "com.android.systemui.qs.panels.ui.viewmodel.AvailableEditActions"
+            for (candidate in editTileCandidates) {
+                val cls = runCatching { cl.loadClass(candidate) }.getOrNull() ?: continue
+                val field = runCatching { cls.field("availableEditActions") }.getOrNull()
+                    ?: run {
+                        log("QSTileMinCountFix: 保险4 $candidate 无字段 availableEditActions, skip")
+                        continue
+                    }
+                val ctor = runCatching { cls.declaredConstructors.firstOrNull() }.getOrNull() ?: continue
+                hook(ctor, after { chain, _ ->
+                    runCatching {
+                        val actions = field.get(chain.thisObject) ?: return@after chain.proceed()
+                        val add = actions.javaClass.method("add", Any::class.java)
+                        val removeEnum = runCatching {
+                            actions.javaClass.classLoader.loadClass(actionsClsName).field("REMOVE").get(null)
+                        }.getOrNull() ?: return@after chain.proceed()
+                        add.invoke(actions, removeEnum)
+                        log("QSTileMinCountFix: 保险4 ✓ ${cls.name}.<init> → availableEditActions+REMOVE")
+                    }.onFailure { log("QSTileMinCountFix: 保险4 $candidate failed: ${it.message}") }
+                })
+                log("QSTileMinCountFix: 保险4 hooked ${cls.name}")
             }
         }
     }
