@@ -33,7 +33,7 @@ object DisplayStateHook {
             log("DisplayStateHook: DISABLED by persist.flipunlock.display.state")
             return
         }
-        val target = if (isFlip2Device()) 6 else 0
+        val target = 6   // 双屏展开(flip1/flip2 统一; flip1 内屏已拆 enable 空屏, 用户确认测试)
         log("DisplayStateHook: setting up (target state=$target, flip2=${isFlip2Device()})")
         safeHook("DisplayStateHook") {
             // ── ① DeviceStateToLayoutMap.get(int) → 恒返回目标 state 布局 ──
@@ -54,16 +54,14 @@ object DisplayStateHook {
                 log("DisplayStateHook: ✓ DeviceStateToLayoutMap.get → state=$target (恒布局)")
             }.onFailure { log("DisplayStateHook: ① DeviceStateToLayoutMap.get failed: ${it.message}") }
 
-            // ── ② DeviceStateManagerService.getCurrentState() → 返回目标 state(flip2 才改) ──
-            if (isFlip2Device()) {
-                runCatching {
-                    val cls = param.classLoader.loadClass(
-                        "com.android.server.devicestate.DeviceStateManagerService")
-                    val m = cls.method("getCurrentState")
-                    hook(m, replaceResult(target))
-                    log("DisplayStateHook: ✓ getCurrentState → $target (全局, 折叠判定消费点失效)")
-                }.onFailure { log("DisplayStateHook: ② getCurrentState failed: ${it.message}") }
-            }
+            // ── ② DeviceStateManagerService.getCurrentState() → 返回目标 state ──
+            runCatching {
+                val cls = param.classLoader.loadClass(
+                    "com.android.server.devicestate.DeviceStateManagerService")
+                val m = cls.method("getCurrentState")
+                hook(m, replaceResult(target))
+                log("DisplayStateHook: ✓ getCurrentState → $target (全局, 折叠判定消费点失效)")
+            }.onFailure { log("DisplayStateHook: ② getCurrentState failed: ${it.message}") }
         }
     }
 }
