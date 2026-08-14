@@ -56,7 +56,8 @@ class Main : XposedModule() {
         // (InterceptActivityController.isInterceptListUnCheckFold, 独立于身份, 云端 INTERCEPT_LIST)。
         // flip2 system_server 注入正常(§34.7)可生效; flip1 断路(§43.6.1)装不上, 无影响。
         AppRestriction.hook(param)           // 外屏启动限制解除(通知点击拦截门)
-        CutoutRemove.hook(param)             // cutout 清零(保留,已验证生效)
+        // CutoutRemove.hook(param)          // [2026-08-14 注释] cutout 清零停用(用户决定, 属性层通杀;
+        //                                   //  flip2 由 Flip2CutoutLetterboxHook 豁免 letterbox, 保留 cutout 数据)
         Flip2CutoutLetterboxHook.hook(param) // flip2 letterbox 豁免双保险(FLIP2 gate, §34.3)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
         // AppContinuity.hook(param)       // [OFF]
@@ -73,12 +74,11 @@ class Main : XposedModule() {
             log("Main: onPackageReady IN SYSTEM_SERVER pkg=${param.packageName} first=${param.isFirstPackage}")
         }
         log("Main: onPackageReady pkg=${param.packageName} first=${param.isFirstPackage} proc=$proc")
-        // Camera process: install CutoutRemove without Parser.parse zeroing
-        // so camera gets real cutout data (bounds) for layout calculations.
-        if (param.packageName == "com.android.camera") {
-            log("Main: loading CutoutRemove.hookApp for camera (real cutout preserved)")
-            CutoutRemove.hookApp(param)   // 相机 NPE 防御(保留)
-        }
+        // Camera process: CutoutRemove.hookApp(camera) 相机 NPE 防御随 cutout 清零一并停用(2026-08-14)
+        // if (param.packageName == "com.android.camera") {
+        //     log("Main: loading CutoutRemove.hookApp for camera (real cutout preserved)")
+        //     CutoutRemove.hookApp(param)
+        // }
         // App-side size-compat disable (complements AppFullscreen system_server hooks)
         AppFullscreen.hookApp(param)      // app 端全屏(保留)
         packageHooks.forEach { hook ->
