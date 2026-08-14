@@ -97,6 +97,19 @@ object SFDeviceGestureHook : BaseHook() {
                     hook(upd) { _ -> null }
                     log("SFDeviceGestureHook: ✓ updateProfileOnSpecialFDevice skipped (flip2 布局保护)")
                 }.onFailure { log("SFDeviceGestureHook: updateProfileOnSpecialFDevice failed: ${it.message}") }
+
+                // ── flip2 手势防消失 (2026-08-14) ──
+                // 折叠状态变化回调 SpecialFDeviceGestureHelper.lambda$init$0(不经过被 hook 的
+                // isInSFDeviceFoldedMode) → onFold → BaseRecentsImpl.removeNavStubView() 无条件移除
+                // NavStubView → 手势消失且恒折叠使用无下一次 onExpand 恢复(flip1 恒折叠没触发,
+                // flip2 真折叠设备必现)。创建幂等(mNavStubView==null 才建), 故移除改 no-op 安全。
+                runCatching {
+                    val recCls = param.classLoader.findClassUp(
+                        "com.miui.home.recents.BaseRecentsImpl")
+                    hook(recCls.method("removeNavStubView")) { _ -> null }
+                    hook(recCls.method("clearBackStubWindow")) { _ -> null }
+                    log("SFDeviceGestureHook: ✓ removeNavStubView/clearBackStubWindow no-op (flip2 手势防消失)")
+                }.onFailure { log("SFDeviceGestureHook: 手势防消失 hook failed: ${it.message}") }
             }
         }
     }
