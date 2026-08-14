@@ -15,6 +15,7 @@ import com.example.flipunlock.hook.systemui.QSTileMinCountFixHook
 import com.example.flipunlock.hook.systemui.SystemUiKeyguardFix
 import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.currentProcessName
+import com.example.flipunlock.hook.util.isFlip2Device
 import com.example.flipunlock.hook.util.log
 
 import io.github.libxposed.api.XposedModule
