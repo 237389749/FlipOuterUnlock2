@@ -6,6 +6,7 @@ import com.example.flipunlock.hook.miuihome.SFDeviceGestureHook
 import com.example.flipunlock.hook.system_server.AppFullscreen
 import com.example.flipunlock.hook.system_server.AppRestriction
 import com.example.flipunlock.hook.system_server.CutoutRemove
+import com.example.flipunlock.hook.system_server.DisplayStateHook
 import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.WallpaperFixHook
@@ -59,6 +60,7 @@ class Main : XposedModule() {
         // CutoutRemove.hook(param)          // [2026-08-14 注释] cutout 清零停用(用户决定, 属性层通杀;
         //                                   //  flip2 由 Flip2CutoutLetterboxHook 豁免 letterbox, 保留 cutout 数据)
         Flip2CutoutLetterboxHook.hook(param) // flip2 letterbox 豁免双保险(FLIP2 gate, §34.3)
+        DisplayStateHook.hook(param)         // DeviceState 钉死: 1b 恒布局 + getCurrentState(flip2→6 双屏/ flip1→0 外屏)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
         // AppContinuity.hook(param)       // [OFF]
         // AodHook.hookFramework(param)    // [OFF]
