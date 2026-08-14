@@ -99,6 +99,7 @@ object Config {
         "persist.flipunlock.ui.widget",
         "persist.flipunlock.ui.controlcenter",
         "persist.flipunlock.ui.recentsmenu",
+        "persist.flipunlock.ui.qstilemin",
         "persist.flipunlock.ime",
         "persist.flipunlock.camera",
         "persist.flipunlock.ui.launcherdensity",
@@ -133,6 +134,8 @@ object Config {
     val uiWidget: Boolean get() = enabled && raw("persist.flipunlock.ui.widget", true)
     val uiControlCenter: Boolean get() = enabled && raw("persist.flipunlock.ui.controlcenter", true)
     val uiRecentsMenu: Boolean get() = enabled && raw("persist.flipunlock.ui.recentsmenu", true)
+    // QSTileMinCountFixHook(控制中心编辑磁贴下限→0)开关
+    val qsTileMinCount: Boolean get() = enabled && raw("persist.flipunlock.ui.qstilemin", true)
 
     // Other
     val ime: Boolean get() = enabled && raw("persist.flipunlock.ime", true)
