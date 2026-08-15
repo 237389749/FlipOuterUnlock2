@@ -1,31 +1,30 @@
 package com.example.flipunlock
 
 import com.example.flipunlock.hook.BaseHook
-import com.example.flipunlock.hook.aod.AodHook
+// import com.example.flipunlock.hook.aod.AodHook           // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.identity.CameraCutoutFixHook
-import com.example.flipunlock.hook.identity.Flip1AodIdentityHook
+// import com.example.flipunlock.hook.identity.Flip1AodIdentityHook  // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.identity.TinyScreenFixHook
-import com.example.flipunlock.hook.miuihome.SFDeviceGestureHook
+// import com.example.flipunlock.hook.miuihome.SFDeviceGestureHook    // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.system_server.AppFullscreen
-import com.example.flipunlock.hook.system_server.AppRestriction
-import com.example.flipunlock.hook.system_server.CutoutRemove
+// import com.example.flipunlock.hook.system_server.AppRestriction     // [2026-08-15 注释] 最小集合实验
+// import com.example.flipunlock.hook.system_server.CutoutRemove       // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.system_server.DisplayStateHook
 import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.VolumeKeyRemapFixHook
-import com.example.flipunlock.hook.system_server.WallpaperFixHook
-import com.example.flipunlock.hook.camera.CameraFixHook
-import com.example.flipunlock.hook.systemui.FlashlightHook
-import com.example.flipunlock.hook.systemui.NotifFlipTipFixHook
-import com.example.flipunlock.hook.systemui.NotifModalFixHook
+// import com.example.flipunlock.hook.system_server.WallpaperFixHook   // [2026-08-15 注释] 最小集合实验
+// import com.example.flipunlock.hook.camera.CameraFixHook             // [2026-08-15 注释] 最小集合实验
+// import com.example.flipunlock.hook.systemui.FlashlightHook          // [2026-08-15 注释] 最小集合实验
+// import com.example.flipunlock.hook.systemui.NotifFlipTipFixHook     // [2026-08-15 注释] 最小集合实验
+// import com.example.flipunlock.hook.systemui.NotifModalFixHook       // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.systemui.FlashlightStateHook
-import com.example.flipunlock.hook.systemui.QSTileMinCountFixHook
+// import com.example.flipunlock.hook.systemui.QSTileMinCountFixHook   // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.systemui.SystemUiKeyguardFix
 import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.currentProcessName
-import com.example.flipunlock.hook.util.isFlip1Device
-import com.example.flipunlock.hook.util.isFlip2Device
-import com.example.flipunlock.hook.util.log
+// import com.example.flipunlock.hook.util.isFlip1Device  // [2026-08-15 注释] 最小集合实验(相机分支已注释)
+// import com.example.flipunlock.hook.util.isFlip2Device  // [2026-08-15 注释] 最小集合实验(CutoutRemove 已注释)
 
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
@@ -43,18 +42,18 @@ class Main : XposedModule() {
     // ──────────────────────────────────────────────────────────────────
     // 2026-08-13 精简: 只保留 cutout/全屏相关 + Lite 移植 hook, 其余注释
     private val packageHooks = listOf<BaseHook>(
-        FlashlightHook,                 // 控制中心手电筒: 跳过翻转对话框/传感器等待(Lite) [恢复, getCurrentState 新解法无效]
+        // FlashlightHook,               // [2026-08-15 注释] 最小集合实验: 保留 TinyScreenFix/SystemUiKeyguardFix
         // FlashlightStateHook,          // [2026-08-14 注释] SystemUI getCurrentState→3 对手电筒无效果(实测), 回 FlashlightHook
-        SFDeviceGestureHook,            // 外屏上滑手势: isInSFDeviceFoldedMode→false + force_fsg_nav_bar→true(Lite)
+        // SFDeviceGestureHook,          // [2026-08-15 注释] 最小集合实验
         SystemUiKeyguardFix,            // systemui 崩溃环兜底: providesTinyKeyguardViewPager 强制 inflate(Lite, flip1 only)
-        QSTileMinCountFixHook,          // 控制中心编辑磁贴下限→0(重写双保险, flip1/2 通用)
-        NotifFlipTipFixHook,            // 通知模态菜单移除"展开到内屏继续操作"项(flip2 折叠态点通知, 方案B)
-        NotifModalFixHook,             // 折叠态(tiny)点通知不弹模态 → 直接启动(方案A)
+        // QSTileMinCountFixHook,        // [2026-08-15 注释] 最小集合实验
+        // NotifFlipTipFixHook,          // [2026-08-15 注释] 最小集合实验
+        // NotifModalFixHook,            // [2026-08-15 注释] 最小集合实验
         // FlipQsFixHook,               // [2026-08-15 注释] flip 版磁贴设置页(miui.systemui.plugin)非目标, 目标是通用版控制中心
-        AodHook,                        // AOD 外屏显示(flip1 only; #3/#5/Layer2 状态重定向)
-        Flip1AodIdentityHook,           // flip1 所有进程 isFlipDevice→false(手电筒弹窗根因: SystemUI ①实际true)
+        // AodHook,                      // [2026-08-15 注释] 最小集合实验
+        // Flip1AodIdentityHook,         // [2026-08-15 注释] 最小集合实验
         TinyScreenFixHook,              // 属性层死角: getScreenType→0 + isTinyScreen/isFlipTinyScreen→false(修 TIM 通知弹提示)
-        CameraFixHook,                  // 相机进程内 multi_display_type→4: 修 flip2 外屏相机倒置+3:4黑边(属性1副作用)
+        // CameraFixHook,                // [2026-08-15 注释] 最小集合实验
         // CameraCutoutFixHook,         // 相机 NPE 防御 —— 由 CutoutRemove.hookApp(camera) 已覆盖, 不重复
         // DeviceIdentityHook,          // [OFF] 属性层模块已覆盖身份
         // ScreenTypeHook,              // [OFF]
@@ -74,11 +73,11 @@ class Main : XposedModule() {
         // [2026-08-14] AppRestriction 重新启用: flip2 通知点击"请在内屏打开"的拦截门
         // (InterceptActivityController.isInterceptListUnCheckFold, 独立于身份, 云端 INTERCEPT_LIST)。
         // flip2 system_server 注入正常(§34.7)可生效; flip1 断路(§43.6.1)装不上, 无影响。
-        AppRestriction.hook(param)           // 外屏启动限制解除(通知点击拦截门)
+        // AppRestriction.hook(param)       // [2026-08-15 注释] 最小集合实验
         // CutoutRemove: flip2 恢复(清零 cutout 数据→挖孔消除); flip1 属性层通杀不需要(2026-08-14 用户确认)
-        if (isFlip2Device()) {
-            CutoutRemove.hook(param)
-        }
+        // if (isFlip2Device()) {
+        //     CutoutRemove.hook(param)
+        // }
         // Flip2CutoutLetterboxHook.hook(param)  // [2026-08-14 注释] flip2 有 CutoutRemove 清零即可, letterbox 豁免不需要
         DisplayStateHook.hook(param)         // DeviceState 钉死: 1b 恒布局 + getCurrentState(flip2→6 双屏/ flip1→0 外屏)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
@@ -88,8 +87,8 @@ class Main : XposedModule() {
         // InputMethodHook.hook(param)     // [OFF]
         RotationFixHook.hook(param)        // 旋转解除(Lite 移植): MiuiOrientationImpl 折叠态开放旋转
         VolumeKeyRemapFixHook.hook(param)  // 恢复 flip 折叠态音量键方向跟随旋转(supportVolumeKeyRemap→true)
-        WallpaperFixHook.hook(param)       // 壁纸尺寸钳制: 修开机壁纸右侧黑(display1 内屏仍枚举竞态)
-        AodHook.hookFramework(param)       // AOD 外屏显示(flip1 only, flip2 正常; #3 状态钉 DOZE_AOD)
+        // WallpaperFixHook.hook(param)    // [2026-08-15 注释] 最小集合实验
+        // AodHook.hookFramework(param)    // [2026-08-15 注释] 最小集合实验(AOD)
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
@@ -98,13 +97,11 @@ class Main : XposedModule() {
             log("Main: onPackageReady IN SYSTEM_SERVER pkg=${param.packageName} first=${param.isFirstPackage}")
         }
         log("Main: onPackageReady pkg=${param.packageName} first=${param.isFirstPackage} proc=$proc")
-        // Camera process: CutoutRemove.hookApp(camera) 相机 cutout 防御(flip1/flip2 都启用)
-        // flip1: 防 NPE(用户实测无守护闪退); flip2: CameraFixHook(属性→4)恢复 flip 布局后,
-        //   flip 路径 j3.t.p 读 getCutout() 的 rect → 需非 null cutout 防 NPE(00f1167 实测闪退, 恢复 642f418)
-        if (param.packageName == "com.android.camera") {
-            log("Main: loading CutoutRemove.hookApp for camera")
-            CutoutRemove.hookApp(param)
-        }
+        // Camera process: CutoutRemove.hookApp(camera) 相机 cutout 防御 —— [2026-08-15 注释] 最小集合实验
+        // if (param.packageName == "com.android.camera") {
+        //     log("Main: loading CutoutRemove.hookApp for camera")
+        //     CutoutRemove.hookApp(param)
+        // }
         // App-side size-compat disable (complements AppFullscreen system_server hooks)
         AppFullscreen.hookApp(param)      // app 端全屏(保留)
         packageHooks.forEach { hook ->
