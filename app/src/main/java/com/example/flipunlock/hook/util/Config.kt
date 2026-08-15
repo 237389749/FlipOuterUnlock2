@@ -102,6 +102,8 @@ object Config {
         "persist.flipunlock.ui.qstilemin",
         "persist.flipunlock.ime",
         "persist.flipunlock.camera",
+        "persist.flipunlock.camera.fix",
+        "persist.flipunlock.volume.keyremap",
         "persist.flipunlock.ui.launcherdensity",
     )
 
@@ -128,6 +130,10 @@ object Config {
     val wallpaperFix: Boolean get() = enabled && raw("persist.flipunlock.wallpaper.fix", true)
     // DisplayStateHook(DeviceState 钉死: 1b 恒布局 + getCurrentState)开关 — 高影响, 关可回退
     val displayState: Boolean get() = enabled && raw("persist.flipunlock.display.state", true)
+    // CameraFixHook(相机进程属性→4, 修 flip 外屏相机倒置/黑边)开关
+    val cameraFix: Boolean get() = enabled && raw("persist.flipunlock.camera.fix", true)
+    // VolumeKeyRemapFixHook(音量键方向跟随旋转)开关
+    val volumeKeyRemap: Boolean get() = enabled && raw("persist.flipunlock.volume.keyremap", true)
 
     // UI
     val uiLockScreen: Boolean get() = enabled && raw("persist.flipunlock.ui.lockscreen", true)

@@ -33,6 +33,10 @@ object CameraFixHook : BaseHook() {
             log("CameraFix: skip, process=$process")
             return
         }
+        if (!Config.cameraFix) {
+            log("CameraFix: DISABLED by persist.flipunlock.camera.fix")
+            return
+        }
         log("CameraFix: loading for ${param.packageName} (process=$process)")
         val cl = processClassLoader(param.classLoader)
         safeHook("CameraFix") {

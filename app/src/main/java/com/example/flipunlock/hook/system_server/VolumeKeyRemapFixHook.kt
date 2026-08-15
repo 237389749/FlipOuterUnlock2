@@ -31,7 +31,7 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 object VolumeKeyRemapFixHook {
 
     fun hook(param: SystemServerStartingParam) {
-        if (!Config.enabled) return
+        if (!Config.volumeKeyRemap) return
         log("VolumeKeyRemapFix: setting up")
         safeHook("VolumeKeyRemapFix") {
             runCatching {
