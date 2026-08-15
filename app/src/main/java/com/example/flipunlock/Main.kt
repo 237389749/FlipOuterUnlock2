@@ -5,10 +5,10 @@ import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.identity.CameraCutoutFixHook
 // import com.example.flipunlock.hook.identity.Flip1AodIdentityHook  // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.identity.TinyScreenFixHook
-// import com.example.flipunlock.hook.miuihome.SFDeviceGestureHook    // [2026-08-15 注释] 最小集合实验
+import com.example.flipunlock.hook.miuihome.SFDeviceGestureHook
 import com.example.flipunlock.hook.system_server.AppFullscreen
 // import com.example.flipunlock.hook.system_server.AppRestriction     // [2026-08-15 注释] 最小集合实验
-// import com.example.flipunlock.hook.system_server.CutoutRemove       // [2026-08-15 注释] 最小集合实验
+import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.system_server.DisplayStateHook
 import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
@@ -25,7 +25,7 @@ import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.currentProcessName
 import com.example.flipunlock.hook.util.log
 // import com.example.flipunlock.hook.util.isFlip1Device  // [2026-08-15 注释] 最小集合实验(相机分支已注释)
-// import com.example.flipunlock.hook.util.isFlip2Device  // [2026-08-15 注释] 最小集合实验(CutoutRemove 已注释)
+import com.example.flipunlock.hook.util.isFlip2Device
 
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
@@ -45,7 +45,7 @@ class Main : XposedModule() {
     private val packageHooks = listOf<BaseHook>(
         // FlashlightHook,               // [2026-08-15 注释] 最小集合实验: 保留 TinyScreenFix/SystemUiKeyguardFix
         // FlashlightStateHook,          // [2026-08-14 注释] SystemUI getCurrentState→3 对手电筒无效果(实测), 回 FlashlightHook
-        // SFDeviceGestureHook,          // [2026-08-15 注释] 最小集合实验
+        SFDeviceGestureHook,            // 外屏上滑手势: isInSFDeviceFoldedMode→false + force_fsg_nav_bar→true(Lite) [2026-08-15 恢复]
         SystemUiKeyguardFix,            // systemui 崩溃环兜底: providesTinyKeyguardViewPager 强制 inflate(Lite, flip1 only)
         // QSTileMinCountFixHook,        // [2026-08-15 注释] 最小集合实验
         // NotifFlipTipFixHook,          // [2026-08-15 注释] 最小集合实验
@@ -76,10 +76,13 @@ class Main : XposedModule() {
         // flip2 system_server 注入正常(§34.7)可生效; flip1 断路(§43.6.1)装不上, 无影响。
         // AppRestriction.hook(param)       // [2026-08-15 注释] 最小集合实验
         // CutoutRemove: flip2 恢复(清零 cutout 数据→挖孔消除); flip1 属性层通杀不需要(2026-08-14 用户确认)
-        // if (isFlip2Device()) {
-        //     CutoutRemove.hook(param)
-        // }
-        // Flip2CutoutLetterboxHook.hook(param)  // [2026-08-14 注释] flip2 有 CutoutRemove 清零即可, letterbox 豁免不需要
+        if (isFlip2Device()) {
+            CutoutRemove.hook(param)         // [2026-08-15 恢复] flip2 去挖孔
+        }
+        // Flip2CutoutLetterboxHook.hook(param)  // [2026-08-15 恢复] flip2 letterbox 豁免(用户要求与 CutoutRemove 同开)
+        if (isFlip2Device()) {
+            Flip2CutoutLetterboxHook.hook(param)   // flip2 letterbox 豁免
+        }
         DisplayStateHook.hook(param)         // DeviceState 钉死: 1b 恒布局 + getCurrentState(flip2→6 双屏/ flip1→0 外屏)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
         // AppContinuity.hook(param)       // [OFF]
