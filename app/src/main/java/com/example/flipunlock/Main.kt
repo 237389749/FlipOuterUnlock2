@@ -1,7 +1,7 @@
 package com.example.flipunlock
 
 import com.example.flipunlock.hook.BaseHook
-// import com.example.flipunlock.hook.aod.AodHook           // [2026-08-15 注释] 最小集合实验
+import com.example.flipunlock.hook.aod.AodHook
 import com.example.flipunlock.hook.identity.CameraCutoutFixHook
 // import com.example.flipunlock.hook.identity.Flip1AodIdentityHook  // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.identity.TinyScreenFixHook
@@ -52,6 +52,7 @@ class Main : XposedModule() {
         // NotifModalFixHook,            // [2026-08-15 注释] 最小集合实验
         // FlipQsFixHook,               // [2026-08-15 注释] flip 版磁贴设置页(miui.systemui.plugin)非目标, 目标是通用版控制中心
         // AodHook,                      // [2026-08-15 注释] 最小集合实验
+        AodHook,                        // AOD 外屏显示(flip1 only; 内部 gate: flip2 SKIP) [2026-08-15 恢复]
         // Flip1AodIdentityHook,         // [2026-08-15 注释] 最小集合实验
         TinyScreenFixHook,              // 属性层死角: getScreenType→0 + isTinyScreen/isFlipTinyScreen→false(修 TIM 通知弹提示)
         CameraFixHook,                  // 相机进程内 multi_display_type→4: 修 flip 外屏相机倒置+黑边(属性1副作用) [2026-08-15 恢复, flip1/2 通用]
@@ -92,7 +93,7 @@ class Main : XposedModule() {
         RotationFixHook.hook(param)        // 旋转解除(Lite 移植): MiuiOrientationImpl 折叠态开放旋转
         VolumeKeyRemapFixHook.hook(param)  // 恢复 flip 折叠态音量键方向跟随旋转(supportVolumeKeyRemap→true)
         // WallpaperFixHook.hook(param)    // [2026-08-15 注释] 最小集合实验
-        // AodHook.hookFramework(param)    // [2026-08-15 注释] 最小集合实验(AOD)
+        AodHook.hookFramework(param)       // AOD 外屏显示(flip1 only, flip2 内部 SKIP; #3 状态钉 DOZE_AOD) [2026-08-15 恢复]
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
