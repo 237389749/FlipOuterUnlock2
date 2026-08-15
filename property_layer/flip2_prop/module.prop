@@ -1,6 +1,0 @@
-id=flip2_prop
-name=FlipUnlock Property Layer (flip2/bixi)
-version=1
-versionCode=1
-author=flip
-description=multi_display_type=1 (flip2: 属性层基础身份; 全屏/服务端身份由 LSP hook 补)

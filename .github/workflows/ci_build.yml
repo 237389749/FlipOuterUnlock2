@@ -96,13 +96,11 @@ jobs:
             echo "suffix=${{ github.sha }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Package property-layer modules (zip, Magisk/KSU flashable)
+      - name: Package property-layer module (zip, Magisk/KSU flashable)
         if: github.ref_type == 'tag'
         run: |
-          (cd property_layer/flipunlock_prop && zip -r ../../flipunlock_prop.zip .)
-          (cd property_layer/flip1_prop && zip -r ../../flip1_prop.zip .)
-          (cd property_layer/flip2_prop && zip -r ../../flip2_prop.zip .)
-          echo "ZIP_GLOB=flipunlock_prop.zip flip1_prop.zip flip2_prop.zip" >> $GITHUB_ENV
+          (cd property_layer/flip_prop && zip -r ../../flipunlock_prop.zip .)
+          echo "ZIP_GLOB=flipunlock_prop.zip" >> $GITHUB_ENV
 
       - name: Upload APK (artifact)
         uses: actions/upload-artifact@v5
