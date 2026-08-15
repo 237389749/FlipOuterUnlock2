@@ -14,6 +14,7 @@ import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.WallpaperFixHook
 import com.example.flipunlock.hook.camera.CameraFixHook
 import com.example.flipunlock.hook.systemui.FlashlightHook
+import com.example.flipunlock.hook.systemui.FlipQsFixHook
 import com.example.flipunlock.hook.systemui.FlashlightStateHook
 import com.example.flipunlock.hook.systemui.QSTileMinCountFixHook
 import com.example.flipunlock.hook.systemui.SystemUiKeyguardFix
@@ -44,6 +45,7 @@ class Main : XposedModule() {
         SFDeviceGestureHook,            // 外屏上滑手势: isInSFDeviceFoldedMode→false + force_fsg_nav_bar→true(Lite)
         SystemUiKeyguardFix,            // systemui 崩溃环兜底: providesTinyKeyguardViewPager 强制 inflate(Lite, flip1 only)
         QSTileMinCountFixHook,          // 控制中心编辑磁贴下限→0(重写双保险, flip1/2 通用)
+        FlipQsFixHook,                  // flip 磁贴设置页(插件 miui.systemui.plugin)数量限制: syncData <6 不保存 → 补保存
         AodHook,                        // AOD 外屏显示(flip1 only; #3/#5/Layer2 状态重定向)
         Flip1AodIdentityHook,           // flip1 所有进程 isFlipDevice→false(手电筒弹窗根因: SystemUI ①实际true)
         CameraFixHook,                  // 相机进程内 multi_display_type→4: 修 flip2 外屏相机倒置+3:4黑边(属性1副作用)
