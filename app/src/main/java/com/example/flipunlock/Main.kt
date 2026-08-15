@@ -14,7 +14,6 @@ import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.WallpaperFixHook
 import com.example.flipunlock.hook.camera.CameraFixHook
 import com.example.flipunlock.hook.systemui.FlashlightHook
-import com.example.flipunlock.hook.systemui.FlipQsFixHook
 import com.example.flipunlock.hook.systemui.FlashlightStateHook
 import com.example.flipunlock.hook.systemui.QSTileMinCountFixHook
 import com.example.flipunlock.hook.systemui.SystemUiKeyguardFix

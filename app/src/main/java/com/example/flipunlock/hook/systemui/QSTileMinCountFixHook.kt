@@ -152,8 +152,10 @@ object QSTileMinCountFixHook : BaseHook() {
                     val value = chain.args[0] as? List<*> ?: return@before
                     var added = 0
                     for (vm in value) {
+                        val v = vm ?: continue
+                        val actions = runCatching { v.getField("availableEditActions") }.getOrNull()
+                            ?: continue
                         runCatching {
-                            val actions = vm.getField("availableEditActions")
                             val add = actions.javaClass.method("add", Any::class.java)
                             val removeEnum = actions.javaClass.classLoader
                                 .loadClass(actionsClsName).field("REMOVE").get(null)
