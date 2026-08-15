@@ -37,6 +37,8 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write          # 创建 Release + 上传 asset 需要(GITHUB_TOKEN)
     steps:
       - uses: actions/checkout@v5
         with:
@@ -116,4 +118,3 @@ jobs:
             ${{ env.APK_GLOB }}
             ${{ env.ZIP_GLOB }}
           name: FlipOuterUnlock ${{ github.ref_name }}
-          update_release: true
