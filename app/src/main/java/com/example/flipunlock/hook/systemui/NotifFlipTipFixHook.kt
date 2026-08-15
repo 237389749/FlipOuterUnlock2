@@ -56,7 +56,8 @@ object NotifFlipTipFixHook : BaseHook() {
                             val item = it.next()
                             val isFlip = (flipTip != null && item === flipTip) ||
                                 runCatching {
-                                    item.callMethod("getContentDescription") as? String == "展开到内屏继续操作"
+                                    val desc = item?.let { it.callMethod("getContentDescription") } as? String
+                                    desc == "展开到内屏继续操作"
                                 }.getOrDefault(false)
                             if (isFlip) {
                                 it.remove()
