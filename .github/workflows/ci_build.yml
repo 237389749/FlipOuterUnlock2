@@ -96,6 +96,14 @@ jobs:
             echo "suffix=${{ github.sha }}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Package property-layer modules (zip, Magisk/KSU flashable)
+        if: github.ref_type == 'tag'
+        run: |
+          (cd property_layer/flipunlock_prop && zip -r ../../flipunlock_prop.zip .)
+          (cd property_layer/flip1_prop && zip -r ../../flip1_prop.zip .)
+          (cd property_layer/flip2_prop && zip -r ../../flip2_prop.zip .)
+          echo "ZIP_GLOB=flipunlock_prop.zip flip1_prop.zip flip2_prop.zip" >> $GITHUB_ENV
+
       - name: Upload APK (artifact)
         uses: actions/upload-artifact@v5
         with:
@@ -106,5 +114,8 @@ jobs:
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.APK_GLOB }}
+          files: |
+            ${{ env.APK_GLOB }}
+            ${{ env.ZIP_GLOB }}
           name: FlipOuterUnlock ${{ github.ref_name }}
+          update_release: true

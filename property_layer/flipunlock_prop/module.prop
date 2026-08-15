@@ -1,0 +1,6 @@
+id=flipunlock_prop
+name=FlipUnlock Property Override
+version=v1.0
+versionCode=1
+author=flip project
+description=resetprop: persist.sys.multi_display_type=1 (flip→phone, 静态常量 zygote 前生效) + dialog continuity off
