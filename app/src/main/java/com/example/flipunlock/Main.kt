@@ -23,6 +23,7 @@ import com.example.flipunlock.hook.systemui.FlashlightStateHook
 import com.example.flipunlock.hook.systemui.SystemUiKeyguardFix
 import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.currentProcessName
+import com.example.flipunlock.hook.util.log
 // import com.example.flipunlock.hook.util.isFlip1Device  // [2026-08-15 注释] 最小集合实验(相机分支已注释)
 // import com.example.flipunlock.hook.util.isFlip2Device  // [2026-08-15 注释] 最小集合实验(CutoutRemove 已注释)
 
