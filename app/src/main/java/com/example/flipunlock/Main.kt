@@ -14,7 +14,7 @@ import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.VolumeKeyRemapFixHook
 // import com.example.flipunlock.hook.system_server.WallpaperFixHook   // [2026-08-15 注释] 最小集合实验
-// import com.example.flipunlock.hook.camera.CameraFixHook             // [2026-08-15 注释] 最小集合实验
+import com.example.flipunlock.hook.camera.CameraFixHook
 // import com.example.flipunlock.hook.systemui.FlashlightHook          // [2026-08-15 注释] 最小集合实验
 // import com.example.flipunlock.hook.systemui.NotifFlipTipFixHook     // [2026-08-15 注释] 最小集合实验
 // import com.example.flipunlock.hook.systemui.NotifModalFixHook       // [2026-08-15 注释] 最小集合实验
@@ -54,7 +54,7 @@ class Main : XposedModule() {
         // AodHook,                      // [2026-08-15 注释] 最小集合实验
         // Flip1AodIdentityHook,         // [2026-08-15 注释] 最小集合实验
         TinyScreenFixHook,              // 属性层死角: getScreenType→0 + isTinyScreen/isFlipTinyScreen→false(修 TIM 通知弹提示)
-        // CameraFixHook,                // [2026-08-15 注释] 最小集合实验
+        CameraFixHook,                  // 相机进程内 multi_display_type→4: 修 flip 外屏相机倒置+黑边(属性1副作用) [2026-08-15 恢复, flip1/2 通用]
         // CameraCutoutFixHook,         // 相机 NPE 防御 —— 由 CutoutRemove.hookApp(camera) 已覆盖, 不重复
         // DeviceIdentityHook,          // [OFF] 属性层模块已覆盖身份
         // ScreenTypeHook,              // [OFF]
@@ -101,11 +101,12 @@ class Main : XposedModule() {
             log("Main: onPackageReady IN SYSTEM_SERVER pkg=${param.packageName} first=${param.isFirstPackage}")
         }
         log("Main: onPackageReady pkg=${param.packageName} first=${param.isFirstPackage} proc=$proc")
-        // Camera process: CutoutRemove.hookApp(camera) 相机 cutout 防御 —— [2026-08-15 注释] 最小集合实验
-        // if (param.packageName == "com.android.camera") {
-        //     log("Main: loading CutoutRemove.hookApp for camera")
-        //     CutoutRemove.hookApp(param)
-        // }
+        // Camera process: CutoutRemove.hookApp(camera) 相机 cutout 防御(flip1/flip2 都启用) [2026-08-15 恢复]
+        // flip1: 防 NPE(用户实测无守护闪退); flip2: 配合 CameraFixHook(属性→4)flip 布局需非 null cutout
+        if (param.packageName == "com.android.camera") {
+            log("Main: loading CutoutRemove.hookApp for camera")
+            CutoutRemove.hookApp(param)
+        }
         // App-side size-compat disable (complements AppFullscreen system_server hooks)
         AppFullscreen.hookApp(param)      // app 端全屏(保留)
         packageHooks.forEach { hook ->
