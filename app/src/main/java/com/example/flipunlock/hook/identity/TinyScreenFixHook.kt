@@ -37,6 +37,10 @@ object TinyScreenFixHook : BaseHook() {
     override val targetPackages = listOf("*")
 
     override fun setupHooks(param: PackageReadyParam) {
+        if (!Config.tinyScreenFix) {
+            log("TinyScreenFix: DISABLED by persist.flipunlock.identity.tinyscreen")
+            return
+        }
         val cl = processClassLoader(param.classLoader)
         safeHook("TinyScreenFix") {
             // ① Configuration.getScreenType → 0 (SCREEN_TYPE_EXPAND 内屏)

@@ -104,6 +104,8 @@ object Config {
         "persist.flipunlock.camera",
         "persist.flipunlock.camera.fix",
         "persist.flipunlock.volume.keyremap",
+        "persist.flipunlock.ui.keyguardfix",
+        "persist.flipunlock.identity.tinyscreen",
         "persist.flipunlock.ui.launcherdensity",
     )
 
@@ -134,6 +136,10 @@ object Config {
     val cameraFix: Boolean get() = enabled && raw("persist.flipunlock.camera.fix", true)
     // VolumeKeyRemapFixHook(音量键方向跟随旋转)开关
     val volumeKeyRemap: Boolean get() = enabled && raw("persist.flipunlock.volume.keyremap", true)
+    // SystemUiKeyguardFix(崩溃环兜底)开关 — 默认 true; 关闭注意 systemui 崩溃环风险
+    val keyguardFix: Boolean get() = enabled && raw("persist.flipunlock.ui.keyguardfix", true)
+    // TinyScreenFixHook(属性层死角: getScreenType/isTinyScreen→false)开关
+    val tinyScreenFix: Boolean get() = enabled && raw("persist.flipunlock.identity.tinyscreen", true)
 
     // UI
     val uiLockScreen: Boolean get() = enabled && raw("persist.flipunlock.ui.lockscreen", true)
