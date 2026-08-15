@@ -12,6 +12,7 @@ import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.system_server.DisplayStateHook
 import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
+import com.example.flipunlock.hook.system_server.VolumeKeyRemapFixHook
 import com.example.flipunlock.hook.system_server.WallpaperFixHook
 import com.example.flipunlock.hook.camera.CameraFixHook
 import com.example.flipunlock.hook.systemui.FlashlightHook
@@ -86,6 +87,7 @@ class Main : XposedModule() {
         // SubScreenGesture.hook(param)    // [OFF]
         // InputMethodHook.hook(param)     // [OFF]
         RotationFixHook.hook(param)        // 旋转解除(Lite 移植): MiuiOrientationImpl 折叠态开放旋转
+        VolumeKeyRemapFixHook.hook(param)  // 恢复 flip 折叠态音量键方向跟随旋转(supportVolumeKeyRemap→true)
         WallpaperFixHook.hook(param)       // 壁纸尺寸钳制: 修开机壁纸右侧黑(display1 内屏仍枚举竞态)
         AodHook.hookFramework(param)       // AOD 外屏显示(flip1 only, flip2 正常; #3 状态钉 DOZE_AOD)
     }
