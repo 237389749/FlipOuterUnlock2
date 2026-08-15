@@ -125,5 +125,46 @@ object QSTileMinCountFixHook : BaseHook() {
                 log("QSTileMinCountFix: 保险4 hooked ${cls.name}")
             }
         }
+
+        // ── 保险 5(直接数量判定): hook 编辑页 tiles 数据流生成 lambda 的 emit/before,
+        //    结果 List<EditTileViewModel> 的 availableEditActions 全部加 REMOVE。
+        //    判定链(flip2 dex 反汇编实锤, §43.6.3): EditModeViewModel$tiles$lambda$10$$inlined$map$1$2.emit
+        //      → size<=minNumberOfTiles → availableEditActions 无 REMOVE → 减号消失。
+        //    本保险直接在判定结果处注入 REMOVE(绕过 minNumberOfTiles 整个判定)。
+        safeHook("QSTileMinCountFix.5") {
+            val lambdaCandidates = listOf(
+                "com.android.systemui.qs.panels.ui.viewmodel.EditModeViewModel\$tiles\$lambda\$10\$\$inlined\$map\$1\$2",
+                "com.android.systemui.qs.panels.ui.viewmodel.EditModeViewModel\$tiles\$1\$2",
+            )
+            val actionsClsName = "com.android.systemui.qs.panels.ui.viewmodel.AvailableEditActions"
+            for (candidate in lambdaCandidates) {
+                val cls = runCatching { cl.loadClass(candidate) }.getOrNull() ?: continue
+                // emit(value: Object, continuation: Continuation) — FlowCollector 方法
+                val emit = runCatching {
+                    cls.method("emit", Any::class.java, kotlin.coroutines.Continuation::class.java)
+                }.getOrNull()
+                val target = emit
+                if (target == null) {
+                    log("QSTileMinCountFix: 保险5 $candidate 无 emit 方法, skip")
+                    continue
+                }
+                hook(target, before { chain ->
+                    val value = chain.args[0] as? List<*> ?: return@before
+                    var added = 0
+                    for (vm in value) {
+                        runCatching {
+                            val actions = vm.getField("availableEditActions")
+                            val add = actions.javaClass.method("add", Any::class.java)
+                            val removeEnum = actions.javaClass.classLoader
+                                .loadClass(actionsClsName).field("REMOVE").get(null)
+                            add.invoke(actions, removeEnum)
+                            added++
+                        }.onFailure { /* 单元素失败忽略 */ }
+                    }
+                    if (added > 0) log("QSTileMinCountFix: 保险5 ✓ 数量判定结果 +REMOVE ($added 磁贴)")
+                })
+                log("QSTileMinCountFix: 保险5 hooked ${cls.name}.emit")
+            }
+        }
     }
 }
