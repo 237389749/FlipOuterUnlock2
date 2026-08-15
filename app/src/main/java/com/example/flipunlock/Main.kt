@@ -9,7 +9,6 @@ import com.example.flipunlock.hook.system_server.AppFullscreen
 import com.example.flipunlock.hook.system_server.AppRestriction
 import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.system_server.DisplayStateHook
-import com.example.flipunlock.hook.system_server.DisplayResizeHook
 import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.WallpaperFixHook
@@ -74,7 +73,6 @@ class Main : XposedModule() {
         }
         // Flip2CutoutLetterboxHook.hook(param)  // [2026-08-14 注释] flip2 有 CutoutRemove 清零即可, letterbox 豁免不需要
         DisplayStateHook.hook(param)         // DeviceState 钉死: 1b 恒布局 + getCurrentState(flip2→6 双屏/ flip1→0 外屏)
-        DisplayResizeHook.hook(param)        // 外屏逻辑分辨率伪装 1224×1410(flip2 system_server, 开关默认关)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
         // AppContinuity.hook(param)       // [OFF]
         // AodHook.hookFramework(param)    // [OFF]
