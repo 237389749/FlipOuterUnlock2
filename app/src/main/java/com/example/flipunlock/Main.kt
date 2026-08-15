@@ -4,6 +4,7 @@ import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.aod.AodHook
 import com.example.flipunlock.hook.identity.CameraCutoutFixHook
 import com.example.flipunlock.hook.identity.Flip1AodIdentityHook
+import com.example.flipunlock.hook.identity.TinyScreenFixHook
 import com.example.flipunlock.hook.miuihome.SFDeviceGestureHook
 import com.example.flipunlock.hook.system_server.AppFullscreen
 import com.example.flipunlock.hook.system_server.AppRestriction
@@ -51,6 +52,7 @@ class Main : XposedModule() {
         // FlipQsFixHook,               // [2026-08-15 注释] flip 版磁贴设置页(miui.systemui.plugin)非目标, 目标是通用版控制中心
         AodHook,                        // AOD 外屏显示(flip1 only; #3/#5/Layer2 状态重定向)
         Flip1AodIdentityHook,           // flip1 所有进程 isFlipDevice→false(手电筒弹窗根因: SystemUI ①实际true)
+        TinyScreenFixHook,              // 属性层死角: getScreenType→0 + isTinyScreen/isFlipTinyScreen→false(修 TIM 通知弹提示)
         CameraFixHook,                  // 相机进程内 multi_display_type→4: 修 flip2 外屏相机倒置+3:4黑边(属性1副作用)
         // CameraCutoutFixHook,         // 相机 NPE 防御 —— 由 CutoutRemove.hookApp(camera) 已覆盖, 不重复
         // DeviceIdentityHook,          // [OFF] 属性层模块已覆盖身份
