@@ -95,6 +95,7 @@ object Config {
         "persist.flipunlock.rotation.fix",
         "persist.flipunlock.wallpaper.fix",
         "persist.flipunlock.display.state",
+        "persist.flipunlock.display.resize",
         "persist.flipunlock.ui.lockscreen",
         "persist.flipunlock.ui.widget",
         "persist.flipunlock.ui.controlcenter",
@@ -128,6 +129,8 @@ object Config {
     val wallpaperFix: Boolean get() = enabled && raw("persist.flipunlock.wallpaper.fix", true)
     // DisplayStateHook(DeviceState 钉死: 1b 恒布局 + getCurrentState)开关 — 高影响, 关可回退
     val displayState: Boolean get() = enabled && raw("persist.flipunlock.display.state", true)
+    // DisplayResizeHook(外屏逻辑分辨率伪装 1224×1410, flip2 system_server)开关 — 高风险默认关
+    val displayResize: Boolean get() = enabled && raw("persist.flipunlock.display.resize", false)
 
     // UI
     val uiLockScreen: Boolean get() = enabled && raw("persist.flipunlock.ui.lockscreen", true)
