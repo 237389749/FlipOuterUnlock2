@@ -14,6 +14,18 @@ if [ "$PROVISIONED" != "1" ]; then
     log -t flip_prop "provision skipped (device_provisioned was '$PROVISIONED')"
 fi
 
+# ── 预防: LSP 未装则不伪装(方案A, 2026-08-16) ────────────────────────
+# 单独装 KSU(属性1)无 LSP = SystemUI TinyKeyguardPanel NPE 崩溃环(§38,
+#   isFlipDevice→false 禁止作用于 SystemUI, 需 LSP DeviceIdentityHook 身份排除)。
+# 用文件系统 glob 检查 LSP APK(com.example.flipunlock)是否安装 —— 不依赖 pm
+#   服务(service 早期 pm 可能未就绪, 误判会错误还原属性), /data/app 是 DE 区已挂载。
+# 未装 → 属性还原 4(不伪装), 从根上避免崩溃。
+# 局限: LSP 装了但未启用/scope 不全防不住 → 由下面方案B(崩溃自愈)兜底。
+if ! ls /data/app/*/com.example.flipunlock-*/base.apk >/dev/null 2>&1; then
+    setprop persist.sys.multi_display_type 4
+    log -t flip_prop "LSP 模块未装, 跳过伪装(属性还原 4, 防 SystemUI 崩溃环)"
+fi
+
 # ── SystemUI 崩溃环热自愈(2026-08-16, 方案B) ─────────────────────────
 # 场景: 单独装 KSU 属性模块(属性1=伪装手机)而无 LSP 模块时, SystemUI 的
 #   TinyKeyguardPanelViewController 构造 NPE → 崩溃环(refMD FoldState §38:
