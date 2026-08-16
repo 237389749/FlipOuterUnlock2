@@ -23,6 +23,9 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *   + WindowContainer.setOverrideOrientation PORTRAIT(1)→USER_ROTATION(12)（2026-08-14:
  *     属性1下 ActivityRecord 构造走 else 分支 setOverrideOrientation(ActivityRecord:1585) 绕过
  *     getOrientationMode → 设置/socmark 等 portrait 硬编码 app ④层覆盖不到; 复刻属性4 mode3 效果）
+ *   + WindowContainer.setOrientation(int,WindowContainer) 入口 PORTRAIT(1)→USER_ROTATION(12)
+ *     （2026-08-16 #22: 2参 setOrientation 内 setOverrideOrientation 后直接写 mOverrideOrientation
+ *     字段(flip1:1072)绕过 ⑤ 层 → 方向重算把 portrait 写回; ⑥ 层在最终汇聚点入口拦截）
  *
  * 依赖：全部在 system_server，回调不稳定时（§43.7.2）可能整体不生效。
  *
@@ -121,6 +124,9 @@ object RotationFixHook {
             //   (设置/socmark 实测锁: overrideOrientation=PORTRAIT)。hook 把 PORTRAIT(1)
             //   →USER_ROTATION(12), 复刻属性4下 getOrientationMode→3→case3→screenOrientation=12
             //   的效果。只改 1→12, 其他值原样(DisplayRotation 重置 -1 / TaskFragment 不受影响)。
+            //   2026-08-16 补充: 本层还覆盖 ActivityRecord.getRequestedOrientation() 里
+            //   DisplayRotationStub.overrideOrientationIfNeed 返回非 -2 时的 setOverrideOrientation
+            //   (flip1:6413 / flip2:6546) 路径。
             runCatching {
                 val cls = param.classLoader.loadClass("com.android.server.wm.ActivityRecord")
                 val method = cls.method("setOverrideOrientation", Int::class.javaPrimitiveType!!)
@@ -135,6 +141,33 @@ object RotationFixHook {
                 }
                 log("RotationFix: ✓ hooked setOverrideOrientation(int) [PORTRAIT→12]")
             }.onFailure { log("RotationFix: ⑤ setOverrideOrientation failed: ${it.message}") }
+
+            // ── ⑥ WindowContainer.setOrientation(int, WindowContainer): 方向重算路径的 PORTRAIT 拦截 ──
+            // 2026-08-16 (#22 根因): ⑤ 层只 hook setOverrideOrientation(int), 但
+            //   WindowContainer.setOrientation(2参, flip1:1058/flip2:1066) 内部
+            //   setOverrideOrientation(requestedOrientation) 之后**直接写字段**
+            //   mOverrideOrientation = requestedOrientation(flip1:1072/flip2:1080) —— 绕过方法!
+            //   属性1 下每次方向重算(ActivityRecord.setOrientation 6297 各分支 super.setOrientation /
+            //   overrideOrRestoreOrientationIfNeed 6362 super.setOrientation(origin))都把
+            //   portrait(1) 直接写回 → 设置/socmark 实测仍锁(⑤ 层"未生效"真相)。
+            //   hook 所有 super.setOrientation 的最终汇聚点(父类 package-private), 入口 1→12,
+            //   则 1070/1072 写入的全是 12; -1(重置)/其他值原样(TaskFragment/DisplayRotation 不受影响)。
+            runCatching {
+                val cls = param.classLoader.loadClass("com.android.server.wm.WindowContainer")
+                val method = cls.method("setOrientation",
+                    Int::class.javaPrimitiveType!!,
+                    cls)
+                hook(method) { chain ->
+                    val orient = chain.args[0] as? Int
+                    if (orient == 1) {
+                        log("RotationFix: ✓ setOrientation(2参) PORTRAIT→USER_ROTATION(12)")
+                        chain.proceed(arrayOf<Any?>(12, chain.args[1]))
+                    } else {
+                        chain.proceed()
+                    }
+                }
+                log("RotationFix: ✓ hooked WindowContainer.setOrientation(int,WindowContainer) [PORTRAIT→12]")
+            }.onFailure { log("RotationFix: ⑥ setOrientation(2参) failed: ${it.message}") }
         }
     }
 

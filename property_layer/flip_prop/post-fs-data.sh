@@ -19,3 +19,11 @@ esac
 
 # 部署: 目录复制到 /data/adb/modules/ 后重启 (建议目录名 flip_prop, 两台通用);
 #       卸载: 删目录重启; flip2 上先删旧的 flip2_prop 再装本模块
+#
+# ⚠️ 开关无效说明 (HANDOFF #21, 2026-08-16):
+#   persist.sys.multi_display_type 已被本脚本持久化到 /data/property/persistent_properties,
+#   KSU/Magisk 里 disable 模块只是跳过脚本执行, persist 残留 → 重启后属性仍=1。
+#   要恢复 flip 原生(属性 4), 任选其一:
+#   a) 手动恢复命令(最快, 持久化写一次即可, 无需卸载模块):
+#        su -c 'resetprop persist.sys.multi_display_type 4'
+#   b) 卸载模块(会执行 uninstall.sh, 自动写回 4)
