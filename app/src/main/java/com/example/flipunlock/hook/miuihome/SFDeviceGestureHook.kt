@@ -98,21 +98,25 @@ object SFDeviceGestureHook : BaseHook() {
                     hook(upd) { _ -> null }
                     log("SFDeviceGestureHook: ✓ updateProfileOnSpecialFDevice skipped (flip2 布局保护)")
                 }.onFailure { log("SFDeviceGestureHook: updateProfileOnSpecialFDevice failed: ${it.message}") }
-
-                // ── flip2 手势防消失 (2026-08-14) ──
-                // 折叠状态变化回调 SpecialFDeviceGestureHelper.lambda$init$0(不经过被 hook 的
-                // isInSFDeviceFoldedMode) → onFold → BaseRecentsImpl.removeNavStubView() 无条件移除
-                // NavStubView → 手势消失且恒折叠使用无下一次 onExpand 恢复(flip1 恒折叠没触发,
-                // flip2 真折叠设备必现)。创建幂等(mNavStubView==null 才建), 故移除改 no-op 安全。
-                runCatching {
-                    val recCls = param.classLoader.findClassUp(
-                        "com.miui.home.recents.BaseRecentsImpl")
-                        ?: return@runCatching
-                    hook(recCls.method("removeNavStubView")) { _ -> null }
-                    hook(recCls.method("clearBackStubWindow")) { _ -> null }
-                    log("SFDeviceGestureHook: ✓ removeNavStubView/clearBackStubWindow no-op (flip2 手势防消失)")
-                }.onFailure { log("SFDeviceGestureHook: 手势防消失 hook failed: ${it.message}") }
             }
+
+            // ── 手势防消失(2026-08-14 flip2 + 2026-08-17 通用化 flip1) ──
+            // 折叠状态变化回调 SpecialFDeviceGestureHelper.lambda$init$0(不经过被 hook 的
+            // isInSFDeviceFoldedMode) → onFold → BaseRecentsImpl.removeNavStubView() 无条件移除
+            // NavStubView → 手势消失且恒折叠使用无下一次 onExpand 恢复(flip1 恒折叠 / flip2 真折叠必现)。
+            // 2026-08-17 flip1 用户复现: "在一个 app 里用久了手势消失, 侧边和底部都没有" ——
+            //   flip1 反编译: removeNavStubView/clearBackStubWindow 在 onFold(444)/onExpand(455)/
+            //   updateFsgWindowState(820)/USER_SWITCHED(941) 多处被无条件移除, "用久了"=
+            //   窗口状态更新(全屏/键盘/配置变化)或 fold 误触发, 侧边(backStubWindow)+底部(NavStubView)同消。
+            // 创建幂等(mNavStubView==null 才建), 故移除改 no-op 安全; 双机型通用(flip1 内屏已拆恒外屏)。
+            runCatching {
+                val recCls = param.classLoader.findClassUp(
+                    "com.miui.home.recents.BaseRecentsImpl")
+                    ?: return@runCatching
+                hook(recCls.method("removeNavStubView")) { _ -> null }
+                hook(recCls.method("clearBackStubWindow")) { _ -> null }
+                log("SFDeviceGestureHook: ✓ removeNavStubView/clearBackStubWindow no-op (双机型手势防消失)")
+            }.onFailure { log("SFDeviceGestureHook: 手势防消失 hook failed: ${it.message}") }
         }
     }
 }
