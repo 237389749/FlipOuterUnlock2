@@ -16,8 +16,8 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *
  * 修复（三层）：
  *   ③ needEnableSensor() → true（传感器启用，重建属性 4 的原生 flip 行为，大部分 app 旋转恢复）
- *   ① DisplayRotation.setUserRotation(int,int,String) → 仅拦 DoubleSwitch(caller 过滤) LOCKED→FREE
- *      （2026-08-14 恢复控制中心"锁定方向"磁贴: 磁贴 freezeRotation 等其他 caller 放行）
+ *   ⑦-C(原①) DisplayRotation.setUserRotation(int,int,String) → caller 过滤:
+ *      磁贴("SoSc#setRotationLock")放行(用户主动锁定保留) + 其他 caller(含 DoubleSwitch) LOCKED→FREE
  *   ② DisplayRotationStubImpl.setUserRotation(int,int) → LOCKED→FREE（次路径, 拦系统折叠同步写 settings）
  *   + MiuiOrientationImpl.getOrientationMode -1→3（外屏折叠态，系统 UI 旋转，§43.2.1）
  *   + WindowContainer.setOverrideOrientation PORTRAIT(1)→USER_ROTATION(12)（2026-08-14:
@@ -26,12 +26,35 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *   + WindowContainer.setOrientation(int,WindowContainer) 入口 PORTRAIT(1)→USER_ROTATION(12)
  *     （2026-08-16 #22: 2参 setOrientation 内 setOverrideOrientation 后直接写 mOverrideOrientation
  *     字段(flip1:1072)绕过 ⑤ 层 → 方向重算把 portrait 写回; ⑥ 层在最终汇聚点入口拦截）
+ *   + ⑦ 层(2026-08-20 #22 残留"同一软件有些能转有些不能转"根因实锤):
+ *     DisplayRotationStubImpl.mUserRotationModeOuter = isFlipDevice?0:1 = 1(LOCKED, 构造:78)
+ *       → MiuiSettingsObserver.observe/onChange → updateRotationMode() → setUserRotation(1,rot)
+ *         → 写 settings accelerometer_rotation=0
+ *       → DisplayRotation.updateSettings()(读 settings) → mUserRotationMode=1
+ *       → updateRotationUnchecked: mUserRotationMode==1 时 orientation∈{2,-1,11,12,13}
+ *         (unspecified/user/USER_ROTATION)走锁定路径 preferredRotation=mUserRotation(固定竖屏);
+ *         只有显式 sensor 类 {4,6,7,10}(sensorLandscape/sensorPortrait/fullSensor 等)走传感器
+ *       → 现象 = 同一软件: 显式 sensor 页面能转, 默认/user/portrait 页面锁死
+ *         (⑤⑥ 层把 portrait→12 后 12 也被 mUserRotationMode==1 锁死 → "⑤⑥已实现仍部分锁"的真相)
+ *     修复: ⑦-A updateRotationMode()→no-op(防系统写坏 settings)
+ *           ⑦-B setUserRotationWhenSwitchUser()→no-op(防用户切换写坏)
+ *           ⑦-C 见上(setUserRotation 3参 caller 过滤, 磁贴保留)
+ *           ⑦-D updateSettings() after → 非磁贴锁定(userRequestedLock==false)时反射
+ *                mUserRotationMode=0(修 settings 残留 0 的启动锁; 磁贴锁定后标志保持锁定)
+ *     取舍: 设置应用"自动旋转"开关(直接写 settings 不走 setUserRotation)在属性 1 下会被
+ *           ⑦-D 强制解锁(等效失效) → 用控制中心磁贴锁定替代; 磁贴锁定重启后不保持
+ *           (updateSettings 触发即解, 属性 1 已知取舍)。
  *
  * 依赖：全部在 system_server，回调不稳定时（§43.7.2）可能整体不生效。
  *
  * 进程：system_server。
  */
 object RotationFixHook {
+
+    /** 用户(磁贴)主动锁定标志: setUserRotation(3参) 里 caller="SoSc#setRotationLock" 置 true,
+     *  其他任何锁定/解锁请求置 false。⑦-D(updateSettings after)据此决定是否强制 mUserRotationMode=0。 */
+    @Volatile
+    private var userRequestedLock = false
 
     fun hook(param: SystemServerStartingParam) {
         if (!Config.rotationFix) {
@@ -47,11 +70,11 @@ object RotationFixHook {
                 log("RotationFix: ✓ needEnableSensor → true (sensor rotation enabled)")
             }.onFailure { log("RotationFix: ③ needEnableSensor failed: ${it.message}") }
 
-            // ── ① AOSP DisplayRotation.setUserRotation(int,int,String)（仅拦 DoubleSwitch 系统折叠锁）──
-            // 2026-08-14 恢复磁贴: 由无条件改回 caller 过滤(8cf5d70 方案, 用户确认)。
-            //   属性1下系统折叠切换 setUserRotationWhenSwitchDisplay 以 "DoubleSwitch#Outer/Inner"
-            //   为 caller 发 LOCKED(外屏锁死根因 §43.7②), 只拦它;
-            //   磁贴(freezeRotation)等其他 caller 放行 → 控制中心"锁定方向"磁贴恢复。
+            // ── ⑦-C DisplayRotation.setUserRotation(int,int,String)（caller 过滤, 升级自 ① 层）──
+            // 2026-08-14 恢复磁贴: caller 过滤方案(8cf5d70)。2026-08-20 升级(⑦层):
+            //   磁贴("SoSc#setRotationLock")放行 → 控制中心"锁定方向"磁贴保留;
+            //   其他 caller(含 DoubleSwitch#Outer/Inner 折叠切换、Settings 等系统路径) mode==1
+            //   一律 →FREE —— 属性1下系统任何路径都不得把用户旋转锁死(复刻属性4)。
             runCatching {
                 val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotation")
                 val method = cls.method("setUserRotation",
@@ -61,15 +84,24 @@ object RotationFixHook {
                 hook(method) { chain ->
                     val mode = chain.args[0] as? Int
                     val caller = chain.args[2] as? String
-                    if (mode == 1 && caller != null && caller.contains("DoubleSwitch")) {
-                        log("RotationFix: ✓ DoubleSwitch LOCKED→FREE (磁贴等其他 caller 放行)")
-                        chain.proceed(arrayOf<Any?>(0, chain.args[1], chain.args[2]))
+                    val isUserLock = caller != null && caller.contains("SoSc#setRotationLock")
+                    if (mode == 1) {
+                        if (isUserLock) {
+                            userRequestedLock = true
+                            log("RotationFix: ✓ 磁贴锁定 caller=$caller 放行(用户主动)")
+                            chain.proceed()
+                        } else {
+                            userRequestedLock = false
+                            log("RotationFix: ✓ 系统锁定 caller=$caller LOCKED→FREE")
+                            chain.proceed(arrayOf<Any?>(0, chain.args[1], chain.args[2]))
+                        }
                     } else {
+                        userRequestedLock = false
                         chain.proceed()
                     }
                 }
-                log("RotationFix: ✓ hooked DisplayRotation.setUserRotation(int,int,String) [DoubleSwitch only]")
-            }.onFailure { log("RotationFix: ① DisplayRotation.setUserRotation failed: ${it.message}") }
+                log("RotationFix: ✓ hooked DisplayRotation.setUserRotation(int,int,String) [磁贴放行/系统→FREE]")
+            }.onFailure { log("RotationFix: ⑦-C setUserRotation failed: ${it.message}") }
 
             // ── ② DisplayRotationStubImpl 私有 setUserRotation(int,int)（次路径）──
             runCatching {
@@ -88,6 +120,51 @@ object RotationFixHook {
                 }
                 log("RotationFix: ✓ hooked DisplayRotationStubImpl.setUserRotation(int,int)")
             }.onFailure { log("RotationFix: ② StubImpl.setUserRotation failed: ${it.message}") }
+
+            // ── ⑦-A DisplayRotationStubImpl.updateRotationMode() → no-op ──
+            // 属性1下 mUserRotationModeOuter=1(LOCKED, 构造:78), MiuiSettingsObserver.observe(658)/
+            // onChange(663) → updateRotationMode → setUserRotation(1,rot)(260) → 写 settings
+            // accelerometer_rotation=0 → DisplayRotation.updateSettings 读到 1(LOCKED) → 901/908
+            // 锁死所有非显式 sensor 页面。no-op 断掉这条"系统误锁"源头。
+            // 属性4下 mUserRotationModeOuter=0(FREE), no-op 无副作用(settings 本就不被写坏)。
+            runCatching {
+                val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotationStubImpl")
+                hook(cls.method("updateRotationMode"), replaceResult(Unit))
+                log("RotationFix: ✓ updateRotationMode → no-op (防系统误锁 settings)")
+            }.onFailure { log("RotationFix: ⑦-A updateRotationMode failed: ${it.message}") }
+
+            // ── ⑦-B DisplayRotationStubImpl.setUserRotationWhenSwitchUser() → no-op ──
+            // 用户切换时 updateOutInnerRotationMode(把 mUserRotationModeOuter=1 同步进 settings)
+            // + setUserRotationWhenSwitchDisplay("DoubleSwitch#Inner/Outer") 同样会写坏 → 一并断掉。
+            runCatching {
+                val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotationStubImpl")
+                hook(cls.method("setUserRotationWhenSwitchUser"), replaceResult(Unit))
+                log("RotationFix: ✓ setUserRotationWhenSwitchUser → no-op")
+            }.onFailure { log("RotationFix: ⑦-B setUserRotationWhenSwitchUser failed: ${it.message}") }
+
+            // ── ⑦-D DisplayRotation.updateSettings() after → 非磁贴锁定时 mUserRotationMode=0 ──
+            // updateSettings(1102) 从 settings 读 accelerometer_rotation(1141) → mUserRotationMode(1145)。
+            // settings 若残留 0(被属性1早期写坏/历史残留) → mode=1 → 锁死。after 强制 0(FREE)。
+            // 磁贴锁定(userRequestedLock=true)时保持 1 —— 用户主动锁定不被破坏。
+            // updateSettings 返回 boolean(shouldUpdateRotation): 字段被改时返回 true 触发 updateRotation。
+            runCatching {
+                val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotation")
+                hook(cls.method("updateSettings"), after { chain, result ->
+                    if (!userRequestedLock) {
+                        val dr = chain.thisObject
+                        val f = declaredField(dr.javaClass, "mUserRotationMode")
+                        if (f != null) {
+                            val cur = f.get(dr) as? Int
+                            if (cur != 0) {
+                                f.set(dr, 0)
+                                log("RotationFix: ✓ updateSettings mUserRotationMode $cur → 0 (FREE)")
+                                true
+                            } else result
+                        } else result
+                    } else result
+                })
+                log("RotationFix: ✓ hooked DisplayRotation.updateSettings [非磁贴锁定→mUserRotationMode=0]")
+            }.onFailure { log("RotationFix: ⑦-D updateSettings failed: ${it.message}") }
 
             // ── ④ MiuiOrientationImpl.getOrientationMode：外屏折叠态 -1→3（桌面/系统UI/portrait app 旋转）──
             // 2026-08-14 修复(2): 无条件 -1→3，不再卡 displayId==0 条件。
