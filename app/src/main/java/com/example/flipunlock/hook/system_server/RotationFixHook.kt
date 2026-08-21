@@ -38,23 +38,23 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *         (⑤⑥ 层把 portrait→12 后 12 也被 mUserRotationMode==1 锁死 → "⑤⑥已实现仍部分锁"的真相)
  *     修复: ⑦-A updateRotationMode()→no-op(防系统写坏 settings)
  *           ⑦-B setUserRotationWhenSwitchUser()→no-op(防用户切换写坏)
- *           ⑦-C 见上(setUserRotation 3参 caller 过滤, 磁贴保留)
- *           ⑦-D updateSettings() after → 非磁贴锁定(userRequestedLock==false)时反射
- *                mUserRotationMode=0(修 settings 残留 0 的启动锁; 磁贴锁定后标志保持锁定)
- *     取舍: 设置应用"自动旋转"开关(直接写 settings 不走 setUserRotation)在属性 1 下会被
- *           ⑦-D 强制解锁(等效失效) → 用控制中心磁贴锁定替代; 磁贴锁定重启后不保持
- *           (updateSettings 触发即解, 属性 1 已知取舍)。
+ *           ⑦-C setUserRotation(3参) 所有 caller LOCKED→FREE(2026-08-21 起放弃磁贴,
+ *               用户决策: 以放弃"锁定方向"磁贴为代价换全应用可旋转; 不再区分 SoSc 磁贴 caller)
+ *           ⑦-D updateSettings() after → 无条件反射 mUserRotationMode=0(修 settings 残留 0
+ *               的启动锁, 不再保留磁贴锁定状态)
+ *     取舍(2026-08-21 更新): 控制中心"锁定方向"磁贴永久失效(用户确认已无法控制, 放弃);
+ *           设置应用"自动旋转"开关在属性 1 下同样被强制解锁。
+ *   + ⑤ 层修复(2026-08-21): 原 hook ActivityRecord.setOverrideOrientation(int), 但该方法在
+ *     父类 WindowContainer 声明(ActivityRecord 未 override), 依赖 libxposed 继承链查找, 有
+ *     静默失效疑点 → 设置主页(MiuiSettings, manifest portrait)构造 setOverrideOrientation(1)
+ *     未转 12 仍锁的根因候选; 改为直接 hook 声明类 WindowContainer.setOverrideOrientation(int),
+ *     所有调用(构造 1593 / getRequestedOrientation 6546)动态分派命中, 不依赖继承链。
  *
  * 依赖：全部在 system_server，回调不稳定时（§43.7.2）可能整体不生效。
  *
  * 进程：system_server。
  */
 object RotationFixHook {
-
-    /** 用户(磁贴)主动锁定标志: setUserRotation(3参) 里 caller="SoSc#setRotationLock" 置 true,
-     *  其他任何锁定/解锁请求置 false。⑦-D(updateSettings after)据此决定是否强制 mUserRotationMode=0。 */
-    @Volatile
-    private var userRequestedLock = false
 
     fun hook(param: SystemServerStartingParam) {
         if (!Config.rotationFix) {
@@ -70,11 +70,10 @@ object RotationFixHook {
                 log("RotationFix: ✓ needEnableSensor → true (sensor rotation enabled)")
             }.onFailure { log("RotationFix: ③ needEnableSensor failed: ${it.message}") }
 
-            // ── ⑦-C DisplayRotation.setUserRotation(int,int,String)（caller 过滤, 升级自 ① 层）──
-            // 2026-08-14 恢复磁贴: caller 过滤方案(8cf5d70)。2026-08-20 升级(⑦层):
-            //   磁贴("SoSc#setRotationLock")放行 → 控制中心"锁定方向"磁贴保留;
-            //   其他 caller(含 DoubleSwitch#Outer/Inner 折叠切换、Settings 等系统路径) mode==1
-            //   一律 →FREE —— 属性1下系统任何路径都不得把用户旋转锁死(复刻属性4)。
+            // ── ⑦-C DisplayRotation.setUserRotation(int,int,String): 所有 caller LOCKED→FREE ──
+            // 2026-08-14 起为 caller 过滤(磁贴放行); 2026-08-21 用户决策: 放弃磁贴,
+            // 以"所有应用可旋转"为最高优先级 → 任何 caller(含磁贴 SoSc#setRotationLock、
+            //   DoubleSwitch#Outer/Inner、Settings 系统路径) mode==1 一律 →FREE。
             runCatching {
                 val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotation")
                 val method = cls.method("setUserRotation",
@@ -83,24 +82,14 @@ object RotationFixHook {
                     String::class.java)
                 hook(method) { chain ->
                     val mode = chain.args[0] as? Int
-                    val caller = chain.args[2] as? String
-                    val isUserLock = caller != null && caller.contains("SoSc#setRotationLock")
                     if (mode == 1) {
-                        if (isUserLock) {
-                            userRequestedLock = true
-                            log("RotationFix: ✓ 磁贴锁定 caller=$caller 放行(用户主动)")
-                            chain.proceed()
-                        } else {
-                            userRequestedLock = false
-                            log("RotationFix: ✓ 系统锁定 caller=$caller LOCKED→FREE")
-                            chain.proceed(arrayOf<Any?>(0, chain.args[1], chain.args[2]))
-                        }
+                        log("RotationFix: ✓ setUserRotation LOCKED→FREE caller=${chain.args[2]}")
+                        chain.proceed(arrayOf<Any?>(0, chain.args[1], chain.args[2]))
                     } else {
-                        userRequestedLock = false
                         chain.proceed()
                     }
                 }
-                log("RotationFix: ✓ hooked DisplayRotation.setUserRotation(int,int,String) [磁贴放行/系统→FREE]")
+                log("RotationFix: ✓ hooked DisplayRotation.setUserRotation(int,int,String) [全 caller LOCKED→FREE, 弃磁贴]")
             }.onFailure { log("RotationFix: ⑦-C setUserRotation failed: ${it.message}") }
 
             // ── ② DisplayRotationStubImpl 私有 setUserRotation(int,int)（次路径）──
@@ -142,28 +131,26 @@ object RotationFixHook {
                 log("RotationFix: ✓ setUserRotationWhenSwitchUser → no-op")
             }.onFailure { log("RotationFix: ⑦-B setUserRotationWhenSwitchUser failed: ${it.message}") }
 
-            // ── ⑦-D DisplayRotation.updateSettings() after → 非磁贴锁定时 mUserRotationMode=0 ──
+            // ── ⑦-D DisplayRotation.updateSettings() after → 无条件 mUserRotationMode=0 ──
             // updateSettings(1102) 从 settings 读 accelerometer_rotation(1141) → mUserRotationMode(1145)。
-            // settings 若残留 0(被属性1早期写坏/历史残留) → mode=1 → 锁死。after 强制 0(FREE)。
-            // 磁贴锁定(userRequestedLock=true)时保持 1 —— 用户主动锁定不被破坏。
+            // settings 若残留 0(被属性1早期写坏/历史残留) → mode=1 → 锁死。after 无条件强制 0(FREE)。
+            // 2026-08-21: 去掉 userRequestedLock 判断 —— 已放弃磁贴, 不再保留任何锁定状态。
             // updateSettings 返回 boolean(shouldUpdateRotation): 字段被改时返回 true 触发 updateRotation。
             runCatching {
                 val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotation")
                 hook(cls.method("updateSettings"), after { chain, result ->
-                    if (!userRequestedLock) {
-                        val dr = chain.thisObject
-                        val f = declaredField(dr.javaClass, "mUserRotationMode")
-                        if (f != null) {
-                            val cur = f.get(dr) as? Int
-                            if (cur != 0) {
-                                f.set(dr, 0)
-                                log("RotationFix: ✓ updateSettings mUserRotationMode $cur → 0 (FREE)")
-                                true
-                            } else result
+                    val dr = chain.thisObject
+                    val f = declaredField(dr.javaClass, "mUserRotationMode")
+                    if (f != null) {
+                        val cur = f.get(dr) as? Int
+                        if (cur != 0) {
+                            f.set(dr, 0)
+                            log("RotationFix: ✓ updateSettings mUserRotationMode $cur → 0 (FREE)")
+                            true
                         } else result
                     } else result
                 })
-                log("RotationFix: ✓ hooked DisplayRotation.updateSettings [非磁贴锁定→mUserRotationMode=0]")
+                log("RotationFix: ✓ hooked DisplayRotation.updateSettings [无条件 mUserRotationMode=0]")
             }.onFailure { log("RotationFix: ⑦-D updateSettings failed: ${it.message}") }
 
             // ── ④ MiuiOrientationImpl.getOrientationMode：外屏折叠态 -1→3（桌面/系统UI/portrait app 旋转）──
@@ -204,8 +191,14 @@ object RotationFixHook {
             //   2026-08-16 补充: 本层还覆盖 ActivityRecord.getRequestedOrientation() 里
             //   DisplayRotationStub.overrideOrientationIfNeed 返回非 -2 时的 setOverrideOrientation
             //   (flip1:6413 / flip2:6546) 路径。
+            //   2026-08-21 修复: 原 hook ActivityRecord.method("setOverrideOrientation", int),
+            //   但该方法在父类 WindowContainer 声明(ActivityRecord 未 override) → 依赖 libxposed
+            //   继承链查找, 有静默失效疑点(设置主页构造 setOverrideOrientation(1) 未转 12 的候选
+            //   根因)。改直接 hook 声明类 WindowContainer.setOverrideOrientation(int) —— 必然找到,
+            //   且所有调用(构造 1593 / getRequestedOrientation 6546 / WindowContainer.setOrientation
+            //   1078 内部)动态分派到 WindowContainer 实现, 全部命中。
             runCatching {
-                val cls = param.classLoader.loadClass("com.android.server.wm.ActivityRecord")
+                val cls = param.classLoader.loadClass("com.android.server.wm.WindowContainer")
                 val method = cls.method("setOverrideOrientation", Int::class.javaPrimitiveType!!)
                 hook(method) { chain ->
                     val orient = chain.args[0] as? Int
@@ -216,7 +209,7 @@ object RotationFixHook {
                         chain.proceed()
                     }
                 }
-                log("RotationFix: ✓ hooked setOverrideOrientation(int) [PORTRAIT→12]")
+                log("RotationFix: ✓ hooked WindowContainer.setOverrideOrientation(int) [PORTRAIT→12]")
             }.onFailure { log("RotationFix: ⑤ setOverrideOrientation failed: ${it.message}") }
 
             // ── ⑥ WindowContainer.setOrientation(int, WindowContainer): 方向重算路径的 PORTRAIT 拦截 ──
