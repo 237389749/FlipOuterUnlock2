@@ -5,7 +5,7 @@ import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 
 /**
- * 恢复 flip 折叠态音量键方向跟随旋转（2026-08-15 + 2026-08-16 #23 补强）。
+ * 恢复 flip 折叠态音量键方向跟随旋转（2026-08-15 + 2026-08-16 #23 补强 + 2026-08-21 #23 方案2）。
  *
  * 背景（flip2-miui-services 反编译实锤）:
  *   BaseMiuiPhoneWindowManager:336
@@ -28,13 +28,26 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *   KeyRemapStatusSynchronizeHandler: mFoldStatus 初始 false —— flip2 恒折叠且从不展开时
  *     onDisplayFoldChanged 不回调(带 true) → notifyFoldStatus 永不触发 → 永不 remap(实测根因)
  *
- * 修复(三层):
+ * 2026-08-21 (#23 方案2, refMD §44.6.2) FlipRes 全链补全:
+ *   789 行静态门实锤: BaseMiuiPhoneWindowManager.<clinit> 的 IS_FOLD_DEVICE/IS_FLIP_DEVICE 是
+ *     static final(属性1→双双 false) → registerDisplayFoldListener 不注册 → onDisplayFoldChanged
+ *     永不回调 → ③(notifyFoldStatus after)永不触发 → ②(getInstance after)是唯一 remap 路径。
+ *   方案2 = 给唯一路径加双保险, 不改变全局 isFlipDevice 语义:
+ *     ④ hook notifyWindowRotation(int) after → rotation 信号到来时同步 mWindowRotation +
+ *       立即执行 handleVolumeKeyRemap(不等 handler 消息, 幂等安全)
+ *     ⑤ hook 私有构造(after) → 直接 thisObject 初始化折叠态(与 ② 触发点同在 initInternal:796,
+ *       但更早更直接, 不依赖 getInstance 的返回值/同步)
+ *
+ * 修复(五层):
  *   ① hook MiInputKeyRemap.supportVolumeKeyRemap()(静态) → true
  *     → BaseMiuiPhoneWindowManager 的 if 通过 + 构造里 watcher 注册(rotation 信号可用)
  *   ② hook MiInputKeyRemap.getInstance(Context) after → 主动初始化折叠态:
  *     设置 handler.mFoldStatus=true + 调 handleVolumeKeyRemap(true, 0) → 恒折叠设备立即 remap
  *   ③ hook MiInputKeyRemap.notifyFoldStatus(boolean) after → 折叠回调到来时同步字段 + 立即
  *     执行 handleVolumeKeyRemap(不等 handler 消息, 幂等安全)
+ *   ④ hook MiInputKeyRemap.notifyWindowRotation(int) after → rotation 信号到来时同步字段 +
+ *     立即执行(弥补 watcher 未注册/消息延迟的 rotation 盲区)
+ *   ⑤ hook MiInputKeyRemap 私有构造(after) → thisObject 主动初始化(双保险, 触发点同 ②)
  *
  * 进程: system_server(flip2 注入正常可生效; flip1 断路装不上, 无影响)。
  */
@@ -52,6 +65,21 @@ object VolumeKeyRemapFixHook {
                 hook(m, replaceResult(true))
                 log("VolumeKeyRemapFix: ✓ supportVolumeKeyRemap → true (flip 音量键方向恢复)")
             }.onFailure { log("VolumeKeyRemapFix ① supportVolumeKeyRemap failed: ${it.message}") }
+
+            // ⑤ 私有构造(after): 直接 thisObject 主动初始化折叠态(双保险, 触发点=initInternal:796)
+            //   ——不依赖 getInstance 返回值; 构造私有单例, 全生命周期仅触发一次, 幂等。
+            runCatching {
+                val cls = param.classLoader.loadClass(
+                    "com.android.server.input.MiInputKeyRemap")
+                val c = cls.getDeclaredConstructor(Context::class.java)
+                    .also { it.isAccessible = true }
+                hook(c, after { chain, result ->
+                    val inst = chain.thisObject ?: return@after result
+                    initFoldState(inst)
+                    result
+                })
+                log("VolumeKeyRemapFix: ✓ hooked 构造 after [fold 主动初始化, 双保险]")
+            }.onFailure { log("VolumeKeyRemapFix ⑤ 构造 failed: ${it.message}") }
 
             // ② getInstance(Context) after: 主动初始化折叠态(flip2 恒折叠 → 立即 remap)
             runCatching {
@@ -79,6 +107,21 @@ object VolumeKeyRemapFixHook {
                 })
                 log("VolumeKeyRemapFix: ✓ hooked notifyFoldStatus after [同步驱动]")
             }.onFailure { log("VolumeKeyRemapFix ③ notifyFoldStatus failed: ${it.message}") }
+
+            // ④ notifyWindowRotation(int) after: rotation 信号到来时同步字段 + 立即执行
+            //   (原生只发 handler 消息 case2; 这里同步执行, 防消息延迟/丢失, 幂等安全)
+            runCatching {
+                val cls = param.classLoader.loadClass(
+                    "com.android.server.input.MiInputKeyRemap")
+                val m = cls.method("notifyWindowRotation", Int::class.javaPrimitiveType!!)
+                hook(m, after { chain, result ->
+                    val inst = chain.thisObject ?: return@after result
+                    val rotation = chain.args[0] as? Int ?: return@after result
+                    syncRotation(inst, rotation)
+                    result
+                })
+                log("VolumeKeyRemapFix: ✓ hooked notifyWindowRotation after [rotation 同步]")
+            }.onFailure { log("VolumeKeyRemapFix ④ notifyWindowRotation failed: ${it.message}") }
         }
     }
 
@@ -106,5 +149,20 @@ object VolumeKeyRemapFixHook {
             m.invoke(inst, fold, rotation)
             log("VolumeKeyRemapFix: ✓ fold=$fold rotation=$rotation 同步 handleVolumeKeyRemap")
         }.onFailure { log("VolumeKeyRemapFix setFoldState failed: ${it.message}") }
+    }
+
+    /** 同步 handler 内部类字段 mWindowRotation, 并立即按当前 fold 执行一次(rotation 信号即时生效)。 */
+    private fun syncRotation(inst: Any, rotation: Int) {
+        runCatching {
+            val handler = inst.javaClass.field("mHandler").get(inst) ?: return
+            handler.javaClass.field("mWindowRotation").set(handler, rotation)
+            val fold = runCatching {
+                handler.javaClass.field("mFoldStatus").get(handler) as? Boolean
+            }.getOrNull() ?: false
+            val m = inst.javaClass.method("handleVolumeKeyRemap",
+                Boolean::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)
+            m.invoke(inst, fold, rotation)
+            log("VolumeKeyRemapFix: ✓ rotation=$rotation fold=$fold 同步 handleVolumeKeyRemap")
+        }.onFailure { log("VolumeKeyRemapFix syncRotation failed: ${it.message}") }
     }
 }
