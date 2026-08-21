@@ -13,7 +13,7 @@ import com.example.flipunlock.hook.system_server.DisplayStateHook
 import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.VolumeKeyRemapFixHook
-// import com.example.flipunlock.hook.system_server.WallpaperFixHook   // [2026-08-15 注释] 最小集合实验
+import com.example.flipunlock.hook.system_server.WallpaperFixHook
 import com.example.flipunlock.hook.camera.CameraFixHook
 // import com.example.flipunlock.hook.systemui.FlashlightHook          // [2026-08-15 注释] 最小集合实验
 // import com.example.flipunlock.hook.systemui.NotifFlipTipFixHook     // [2026-08-15 注释] 最小集合实验
@@ -92,7 +92,7 @@ class Main : XposedModule() {
         // InputMethodHook.hook(param)     // [OFF]
         RotationFixHook.hook(param)        // 旋转解除(Lite 移植): MiuiOrientationImpl 折叠态开放旋转
         VolumeKeyRemapFixHook.hook(param)  // 恢复 flip 折叠态音量键方向跟随旋转(supportVolumeKeyRemap→true)
-        // WallpaperFixHook.hook(param)    // [2026-08-15 注释] 最小集合实验
+        WallpaperFixHook.hook(param)       // 壁纸尺寸钳制: flip1 右侧黑 + flip2 属性层背景一半黑(2026-08-21 重写恢复注册)
         AodHook.hookFramework(param)       // AOD 外屏显示(flip1 only, flip2 内部 SKIP; #3 状态钉 DOZE_AOD) [2026-08-15 恢复]
     }
 
