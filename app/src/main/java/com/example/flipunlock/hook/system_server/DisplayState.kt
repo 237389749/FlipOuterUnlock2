@@ -4,6 +4,9 @@ import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 
 /**
+ * ⚠️ 已废弃(2026-08-14 起): 由 DisplayStateHook.kt(终版, 按 state 分支) 替代。
+ *    本文件为旧方案(恒 state 6 双屏 + §S1/S1b), Main.kt 未注册, 保留仅供回溯。
+ *
  * Force dual-screen state so both displays stay active with outer as primary.
  *
  * Logic chain (refMD: Hook_Chain_Map.md §S1):

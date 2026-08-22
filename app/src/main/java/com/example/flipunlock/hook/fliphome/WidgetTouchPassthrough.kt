@@ -43,6 +43,10 @@ import java.lang.reflect.Field
  * size) are NOT included — add only if testing shows touches still leak.
  *
  * Process: com.miui.fliphome
+ *
+ * ⚠️ 状态(2026-08-22 审查): Main.kt 未注册 [OFF]——fliphome 旧方案(与 WidgetRemove/
+ *    RecentsCacheFix 同批被注释, "WidgetRemove, RecentsCacheFix, // [OFF] fliphome")。
+ *    保留文件便于恢复(HANDOFF §8), 需要时取消 Main.kt 注释 + 勾 LSP scope 含 com.miui.fliphome。
  */
 object WidgetTouchPassthrough : BaseHook() {
 

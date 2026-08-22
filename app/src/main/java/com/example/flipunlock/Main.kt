@@ -42,13 +42,14 @@ class Main : XposedModule() {
     //     hook's targetPackages against the ready package ("*" = wildcard,
     //     fires on firstPackage only).
     // ──────────────────────────────────────────────────────────────────
-    // 2026-08-13 精简: 只保留 cutout/全屏相关 + Lite 移植 hook, 其余注释
+    // 2026-08-22 审查整理: 激活项见下; 未激活项一律注释 + 保留方法体/import(HANDOFF §8),
+    //   状态变化以 README.md「Hook 架构」为准。未注册文件(旧方案/已废弃)不删, 便于恢复。
     private val packageHooks = listOf<BaseHook>(
         // FlashlightHook,               // [2026-08-15 注释] 最小集合实验: 保留 TinyScreenFix/SystemUiKeyguardFix
         // FlashlightStateHook,          // [2026-08-14 注释] SystemUI getCurrentState→3 对手电筒无效果(实测), 回 FlashlightHook
         SFDeviceGestureHook,            // 外屏上滑手势: isInSFDeviceFoldedMode→false + force_fsg_nav_bar→true(Lite) [2026-08-15 恢复]
         SystemUiKeyguardFix,            // systemui 崩溃环兜底: providesTinyKeyguardViewPager 强制 inflate(Lite, flip1 only)
-        QSTileMinCountFixHook,          // 控制中心编辑磁贴下限解除(12→4) [2026-08-19 恢复+重写 v6: 保险6 插件路径 QSRecord.setRemovable 恒 true, 内屏样式版生效]
+        QSTileMinCountFixHook,          // 控制中心编辑磁贴下限解除(12→4) [2026-08-22 v8: 保险6 插件路径 QSRecord.setRemovable→proceed(true) + 保险7/8 Compose 判定与写库拦截]
         QSPanelWidthFixHook,            // 横屏控制中心磁贴布局撑满屏幕宽度 [2026-08-22: hook MainPanelController.updatePanelWidth, HORIZONTAL→(屏宽-中缝)/2]
         // NotifFlipTipFixHook,          // [2026-08-15 注释] 最小集合实验
         // NotifModalFixHook,            // [2026-08-15 注释] 最小集合实验
@@ -82,9 +83,8 @@ class Main : XposedModule() {
         if (isFlip2Device()) {
             CutoutRemove.hook(param)         // [2026-08-15 恢复] flip2 去挖孔
         }
-        // Flip2CutoutLetterboxHook.hook(param)  // [2026-08-15 恢复] flip2 letterbox 豁免(用户要求与 CutoutRemove 同开)
         if (isFlip2Device()) {
-            Flip2CutoutLetterboxHook.hook(param)   // flip2 letterbox 豁免
+            Flip2CutoutLetterboxHook.hook(param)   // flip2 letterbox 豁免(与 CutoutRemove 同开, 用户要求)
         }
         DisplayStateHook.hook(param)         // DeviceState 钉死: 1b 恒布局 + getCurrentState(flip2→6 双屏/ flip1→0 外屏)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
