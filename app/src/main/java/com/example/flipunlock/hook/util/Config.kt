@@ -148,6 +148,8 @@ object Config {
     val uiRecentsMenu: Boolean get() = enabled && raw("persist.flipunlock.ui.recentsmenu", true)
     // QSTileMinCountFixHook(控制中心编辑磁贴下限→0)开关
     val qsTileMinCount: Boolean get() = enabled && raw("persist.flipunlock.ui.qstilemin", true)
+    // QSPanelWidthFixHook(横屏控制中心面板宽撑满屏幕)开关
+    val qsPanelWidth: Boolean get() = enabled && raw("persist.flipunlock.ui.qspanelwidth", true)
 
     // Other
     val ime: Boolean get() = enabled && raw("persist.flipunlock.ime", true)

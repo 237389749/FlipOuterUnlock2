@@ -20,6 +20,7 @@ import com.example.flipunlock.hook.camera.CameraFixHook
 // import com.example.flipunlock.hook.systemui.NotifModalFixHook       // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.systemui.FlashlightStateHook
 import com.example.flipunlock.hook.systemui.QSTileMinCountFixHook
+import com.example.flipunlock.hook.systemui.QSPanelWidthFixHook
 import com.example.flipunlock.hook.systemui.SystemUiKeyguardFix
 import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.currentProcessName
@@ -48,6 +49,7 @@ class Main : XposedModule() {
         SFDeviceGestureHook,            // 外屏上滑手势: isInSFDeviceFoldedMode→false + force_fsg_nav_bar→true(Lite) [2026-08-15 恢复]
         SystemUiKeyguardFix,            // systemui 崩溃环兜底: providesTinyKeyguardViewPager 强制 inflate(Lite, flip1 only)
         QSTileMinCountFixHook,          // 控制中心编辑磁贴下限解除(12→4) [2026-08-19 恢复+重写 v6: 保险6 插件路径 QSRecord.setRemovable 恒 true, 内屏样式版生效]
+        QSPanelWidthFixHook,            // 横屏控制中心磁贴布局撑满屏幕宽度 [2026-08-22: hook MainPanelController.updatePanelWidth, HORIZONTAL→(屏宽-中缝)/2]
         // NotifFlipTipFixHook,          // [2026-08-15 注释] 最小集合实验
         // NotifModalFixHook,            // [2026-08-15 注释] 最小集合实验
         // FlipQsFixHook,               // [2026-08-15 注释] flip 版磁贴设置页(miui.systemui.plugin)非目标, 目标是通用版控制中心
