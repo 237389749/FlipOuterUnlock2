@@ -38,7 +38,17 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *     ⑤ hook 私有构造(after) → 直接 thisObject 初始化折叠态(与 ② 触发点同在 initInternal:796,
  *       但更早更直接, 不依赖 getInstance 的返回值/同步)
  *
- * 修复(五层):
+ * 2026-08-22 (#23 三 agent 深挖, refMD §44.6.4) 最终裁决层 ⑥:
+ *   MiInputKeyRemap.handleVolumeKeyRemap(fold, rotation)(176-183) 是唯一裁决点:
+ *     mVolumeHasRemap && (!fold || rotation!=0) → restoreVolumeKey()(恢复物理方向)
+ *     !mVolumeHasRemap && fold && rotation==0   → remapVolumeKey()(互换 24↔25)
+ *   → 仿 RotationFixHook ⑦-E 思路, 在最终执行点兜底: hook handleVolumeKeyRemap before,
+ *     强制 fold=true, rotation 保留事件值(旋转已修好(⑦-E)后 rotation 事件真实发生) →
+ *     竖屏(rotation==0)自动 remap、横屏(rotation!=0)自动 restore, 全自动跟随旋转。
+ *   上游 isFlipDevice()→true 方案已否决(Agent2 审计): 副作用破坏已修好的旋转
+ *     (DisplayRotation 937/958 强制竖屏) 且普通手机无 fold 事件 mFoldStatus 恒 false 仍不 remap。
+ *
+ * 修复(六层):
  *   ① hook MiInputKeyRemap.supportVolumeKeyRemap()(静态) → true
  *     → BaseMiuiPhoneWindowManager 的 if 通过 + 构造里 watcher 注册(rotation 信号可用)
  *   ② hook MiInputKeyRemap.getInstance(Context) after → 主动初始化折叠态:
@@ -48,6 +58,10 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *   ④ hook MiInputKeyRemap.notifyWindowRotation(int) after → rotation 信号到来时同步字段 +
  *     立即执行(弥补 watcher 未注册/消息延迟的 rotation 盲区)
  *   ⑤ hook MiInputKeyRemap 私有构造(after) → thisObject 主动初始化(双保险, 触发点同 ②)
+ *   ⑥(2026-08-22 核心) hook MiInputKeyRemap.handleVolumeKeyRemap(boolean,int) before →
+ *     强制 fold=true(属性1下 mFoldStatus 恒 false, fold 回调链断), rotation 保留事件值
+ *     → 单点裁决全跟随: 竖屏 remap / 横屏 restore, 抹平 ②⑤ 硬编码 rotation=0 的竞态窗口,
+ *       不依赖 mFoldStatus 字段, 幂等安全(与 ②③④⑤ 全部汇入同一入口, 无竞争)
  *
  * 进程: system_server(flip2 注入正常可生效; flip1 断路装不上, 无影响)。
  */
@@ -122,6 +136,31 @@ object VolumeKeyRemapFixHook {
                 })
                 log("VolumeKeyRemapFix: ✓ hooked notifyWindowRotation after [rotation 同步]")
             }.onFailure { log("VolumeKeyRemapFix ④ notifyWindowRotation failed: ${it.message}") }
+
+            // ⑥ handleVolumeKeyRemap(boolean,int) before: 最终裁决层兜底(2026-08-22, 三 agent 深挖)
+            //   MiInputKeyRemap:176-183 是唯一裁决点:
+            //     mVolumeHasRemap && (!fold || rotation!=0) → restoreVolumeKey()(恢复物理方向)
+            //     !mVolumeHasRemap && fold && rotation==0   → remapVolumeKey()(互换 24↔25)
+            //   属性1下 fold 回调链断(mFoldStatus 恒 false) → 强制 fold=true, rotation 保留事件值
+            //   (旋转已修好(⑦-E)后 rotation 事件真实发生: watcher → notifyWindowRotation → ④
+            //    syncRotation → 本方法) → 竖屏自动 remap / 横屏自动 restore, 全自动跟随。
+            //   同时抹平 ②⑤ 硬编码 rotation=0 的竞态窗口; 与 ②③④⑤ 全部汇入同一入口, 无竞争;
+            //   幂等(mVolumeHasRemap 状态机 + addKeyRemapping synchronized)。
+            runCatching {
+                val cls = param.classLoader.loadClass(
+                    "com.android.server.input.MiInputKeyRemap")
+                val m = cls.method("handleVolumeKeyRemap",
+                    Boolean::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)
+                hook(m) { chain ->
+                    val rotation = chain.args[1] as? Int ?: 0
+                    val origFold = chain.args[0]
+                    if (origFold != true) {
+                        log("VolumeKeyRemapFix: ✓ handleVolumeKeyRemap fold→true rotation=$rotation")
+                    }
+                    chain.proceed(arrayOf<Any?>(true, rotation))
+                }
+                log("VolumeKeyRemapFix: ✓ hooked handleVolumeKeyRemap before [fold 强制 true, 单点裁决]")
+            }.onFailure { log("VolumeKeyRemapFix ⑥ handleVolumeKeyRemap failed: ${it.message}") }
         }
     }
 
