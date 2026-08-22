@@ -49,6 +49,12 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *     静默失效疑点 → 设置主页(MiuiSettings, manifest portrait)构造 setOverrideOrientation(1)
  *     未转 12 仍锁的根因候选; 改为直接 hook 声明类 WindowContainer.setOverrideOrientation(int),
  *     所有调用(构造 1593 / getRequestedOrientation 6546)动态分派命中, 不依赖继承链。
+ *   + ⑦-E 最终裁决层兜底(2026-08-22, 三 agent 深挖): 剩余锁根因 = ① flip2 updateSettings 是
+ *     private(1102) → ⑦-D 有 miss 风险 → mUserRotationMode 残留 1; ② mSupportAutoRotation=false
+ *     + ⑤⑥ 任一失效 → portrait(1)/user(3)/reversePortrait(9) 走 911→-1→937 default 保持竖屏
+ *     (901 自由分支只含 {2,-1,11,12,13} 不含 1/3/9)。hook rotationForOrientation(int,int)(825,
+ *     所有 app 方向的最终裁决汇聚点): 入口无条件 mUserRotationMode=0 + 固定竖屏类 {1,3,9}→12
+ *     (USER_ROTATION) → 单点即可全解锁, 不依赖任何上层 hook 成功; 属性4下等价原生无副作用。
  *
  * 依赖：全部在 system_server，回调不稳定时（§43.7.2）可能整体不生效。
  *
@@ -152,6 +158,50 @@ object RotationFixHook {
                 })
                 log("RotationFix: ✓ hooked DisplayRotation.updateSettings [无条件 mUserRotationMode=0]")
             }.onFailure { log("RotationFix: ⑦-D updateSettings failed: ${it.message}") }
+
+            // ── ⑦-E DisplayRotation.rotationForOrientation(int,int): 最终裁决层兜底(2026-08-22)──
+            // 三 agent 深挖结论: 前面 ⑦/④⑤⑥ 都是"改写入方", 而 display 旋转的最终裁决点是
+            // rotationForOrientation(flip2:825) —— 所有 app 的方向最终都汇聚到这里计算 display 旋转。
+            // 剩余锁根因: ① flip2 updateSettings 是 private(1102, flip1 public 1096) → ⑦-D 有
+            //    hook miss 风险 → mUserRotationMode 残留 1 → 12 也锁(901 需 mode==0);
+            //    ② mSupportAutoRotation=false(config_supportSystemNavigationKeys=false) + ⑤⑥
+            //    任一失效 → portrait(1)/user(3)/reversePortrait(9) 走 911 → -1 → 937 default
+            //    → return i2 保持竖屏(901 列表只含 {2,-1,11,12,13}, 不含 1/3/9)。
+            // 在最终裁决点兜底(不计代价):
+            //   1) 入口无条件反射 mUserRotationMode=0(FREE) —— 不依赖 updateSettings hook;
+            //   2) 入口参数固定竖屏类 {1,3,9} → 12(USER_ROTATION) —— 即使 per-app 写入失败
+            //      (mOverrideOrientation 仍是 1), 裁决时也当 12 处理 → mode==0 时进 901 传感器自由转。
+            // 属性4下此层安全: mode 本来就是 0; 1/3/9→12 与原生 getOrientationMode→3→case3→12 等价。
+            // landscape 固定类(0/5/8)保持原样(它们走 911→-1→保持横屏, 不锁竖屏)。
+            runCatching {
+                val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotation")
+                val method = cls.method("rotationForOrientation",
+                    Int::class.javaPrimitiveType!!,
+                    Int::class.javaPrimitiveType!!)
+                hook(method) { chain ->
+                    val dr = chain.thisObject
+                    // 兜底1: mUserRotationMode 强制 0(FREE)
+                    runCatching {
+                        val f = declaredField(dr.javaClass, "mUserRotationMode")
+                        if (f != null) {
+                            val cur = f.get(dr) as? Int
+                            if (cur != 0) {
+                                f.set(dr, 0)
+                                log("RotationFix: ✓ rotationForOrientation mUserRotationMode $cur→0")
+                            }
+                        }
+                    }
+                    // 兜底2: 固定竖屏类 → USER_ROTATION(12)
+                    val orient = chain.args[0] as? Int
+                    if (orient == 1 || orient == 3 || orient == 9) {
+                        log("RotationFix: ✓ rotationForOrientation orientation $orient→12(USER_ROTATION)")
+                        chain.proceed(arrayOf<Any?>(12, chain.args[1]))
+                    } else {
+                        chain.proceed()
+                    }
+                }
+                log("RotationFix: ✓ hooked DisplayRotation.rotationForOrientation [最终裁决兜底]")
+            }.onFailure { log("RotationFix: ⑦-E rotationForOrientation failed: ${it.message}") }
 
             // ── ④ MiuiOrientationImpl.getOrientationMode：外屏折叠态 -1→3（桌面/系统UI/portrait app 旋转）──
             // 2026-08-14 修复(2): 无条件 -1→3，不再卡 displayId==0 条件。
