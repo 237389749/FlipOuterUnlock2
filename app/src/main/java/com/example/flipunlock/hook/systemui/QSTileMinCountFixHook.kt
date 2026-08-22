@@ -4,17 +4,24 @@ import android.content.ContextWrapper
 import android.content.res.Resources
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.util.*
+import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
- * 解除控制中心编辑模式"最少磁贴数"限制（2026-08-21 v7: 保险6 改走插件 PathClassLoader 路径 A）。
+ * 解除控制中心编辑模式"最少磁贴数"限制（2026-08-22 v8: 修 v7 Pitfall #9 args 不可变写异常被吞）。
  *
  * 现象（用户实测）: 控制中心点"编辑"→ 可编辑磁贴删到 8 个后右上角减号消失（删不动）。
  * 目标: 可编辑磁贴能删光, 只保留 4 个固定磁贴。
  *
- * 编辑路径（refMD §43.6.3a/43.6.3b 实锤）:
- *   ① AOSP/Compose 路径（systemui 主 APK）: EditModeViewModel→minNumberOfTiles(12)→REMOVE 判定
- *   ② **插件路径（内屏样式版 VERTICAL 控制中心实际走的路径, systemui-plugin 插件类）**:
+ * 编辑路径（refMD §43.6.3a/b/c 实锤）:
+ *   ① AOSP/Compose 路径（systemui 主 APK）: EditModeButtonKt→_isEditing=true→EditModeKt
+ *     → EditTileListState.isDraggedCellRemovable()(EditTileListState.java:57-64, 删除判定核心)
+ *     → EditModeKt$EditMode$3$2$1 removeTiles(无数量检查)
+ *   ② 老 View 路径（主 APK, AOSP TileAdapter / MIUI MiuiTileAdapter）: 闸门 size>mMinNumTiles
+ *     才可删(TileAdapter:206/391, TileAdapterDelegate:49, MiuiTileAdapter:165/385/517;
+ *     mMinNumTiles=quick_settings_min_num_tiles 仅 3 处读: MinimumTilesResourceRepository:12/
+ *     TileAdapter:309/MiuiTileAdapter:295)
+ *   ③ **插件路径（内屏样式版 VERTICAL 控制中心实际走的路径, systemui-plugin 插件类）**:
  *     MainPanelStyleController.updateStyle: flipDevice && isTinyScreen → COMPACT;
  *     属性1 下 flipDevice=false → VERTICAL(内屏样式) → 编辑按钮 EditButtonController.available()=true
  *     → 点击 → QSListController.startQuery(Mode.EDIT) → TileQueryHelper 查询(读 sysui_qs_tiles)
@@ -25,21 +32,25 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  *       → QSRecord.setRemovable(false)（:707 distributeTiles / :868 addTile / :1161 removeTile）**
  *     → 保存闸门: TileQueryHelper.saveSpecs 无数量校验 → host.changeTiles → 主进程写 sysui_qs_tiles
  *       （删不动 100% 由 setRemovable(false) 决定, 保存无阻碍）
+ *   ④ 写库拦截: MiuiTileSpecRepository.getInterceptUpdateTiles()(:176-180)=零售模式 OR 超级省电
+ *     → addTile/removeTiles/setTiles 全拦; ChangeTiles.apply 空列表保护(结果空则保留原列表)
  *
- * v6 失效根因（§43.6.3b, 3 agent 实锤）: 插件类运行在 com.android.systemui 进程, 但由宿主插件
- *   框架用**独立 PathClassLoader** 加载(宿主 classloader 的子级, PluginInstance$PluginFactory
- *   createPluginContext 创建)。v6 用 processClassLoader+findClassUp(**沿 parent 链向上**)找类 →
- *   方向反了恒找不到 → `?: continue` 静默 skip(无日志) → 保险6 从未执行。
+ * v7 失效根因（§43.6.3c, Pitfall #9 复现）: 保险6 用 `inner.args[0] = true` 改写 libxposed 参数——
+ *   Chain.getArgs() 返回**不可变** List, List.set() 抛 UnsupportedOperationException 被 LSPosed
+ *   **静默吞掉**(仅 lspd verbose log "Exception in hooker") → setRemovable(false) 照常执行 →
+ *   减号消失。WidgetRemove.kt:63 同款先例(2026-07-28)。
  *
- * 修复（v7 六层全防, flip1/2 通用; 内屏样式版核心=保险6 路径 A, 其余 AOSP/Compose 兜底）:
+ * 修复（v8 八层全防, flip1/2 通用; 内屏样式版核心=保险6 路径 A + proceed 传参）:
  *   保险1: Resources.getInteger(int) → quick_settings_min_num_tiles → MIN_TILES(4)（资源层源头）
  *   保险3: MinimumTilesResourceRepository.<init> after → 反射 minNumberOfTiles = MIN_TILES
  *   保险4: EditTileViewModel.<init> after → availableEditActions 反射 add(REMOVE)
  *   保险5: hook EditModeViewModel$tiles 生成 lambda 的 emit/before → 结果 availableEditActions 全部 +REMOVE
  *   保险6(核心, 插件路径, 路径 A): hook PluginFactory.createPluginContext() after → 返回
- *          ContextWrapper.classLoader(=插件 PathClassLoader) → loadClass QSRecord(明文+p113qs 双候选)
- *          → hook setRemovable(boolean) before → 参数强制 true（恒可删, 通杀三处判定; MixFlipMod
- *          ControlCenterHook 已验证的插件 hook 路径; isHooked 防 PluginFactory 多次调用重复 hook）。
+ *          ContextWrapper.classLoader(=插件 PathClassLoader, MixFlipMod 已验证) → loadClass QSRecord
+ *          → hook setRemovable(双签名) 用 **chain.proceed(arrayOf<Any?>(true))**（不写 args!
+ *          Pitfall #9）; isHooked 防 PluginFactory 多次调用重复 hook
+ *   保险7(Compose 删除判定核心): EditTileListState.isDraggedCellRemovable() → 恒 true
+ *   保险8(写库拦截解除): MiuiTileSpecRepository.getInterceptUpdateTiles() → false（零售/超省电）
  * 开关: persist.flipunlock.ui.qstilemin（默认 true）
  */
 object QSTileMinCountFixHook : BaseHook() {
@@ -69,16 +80,20 @@ object QSTileMinCountFixHook : BaseHook() {
         // systemui 以 pkg=android 回调时 param.classLoader 不含 APK 类 → 取进程 Application classLoader
         val cl = processClassLoader(param.classLoader)
 
-        // ── 保险 6(核心, 插件路径, 路径 A): 插件 classloader → QSRecord.setRemovable before 强制 true ──
+        // ── 保险 6(核心, 插件路径, 路径 A): 插件 classloader → QSRecord.setRemovable 恒 true ──
         // 插件类在宿主 classloader 的【子级】独立 PathClassLoader(PluginFactory.createPluginContext
-        // 创建, 缓存于 PluginInstanceInjector.sClassLoaders), findClassUp(向上) 找不到(v6 静默失效)。
-        // 正确路径: hook createPluginContext after → 返回 ContextWrapper.classLoader 即插件 classloader
-        //   （MixFlipMod/SystemUIHook.hookControlCenter 已验证; 类名明文 qs 包与 renamed from 一致）。
-        // 时机=插件懒加载那一刻(控制中心首次创建), isHooked 防 PluginFactory 多次调用重复 hook。
+        // 创建), 宿主 loader 找不到。正确路径(MixFlipMod/SystemUIHook.hookControlCenter 已验证):
+        //   hook createPluginContext after → 返回 ContextWrapper.classLoader 即插件 classloader。
+        // 注入时序(§43.6.3c): ControlCenterImpl.start(@CoreStartable) 预加载插件, 但 createPluginContext
+        // 在插件 newInstance 之后/业务类实例化之前, LSPosed onPackageReady 早于它 → hook 必能赶上。
+        // ⚠️ Pitfall #9: 禁止 args[0]=true(不可变 List 抛异常被吞) → 用 chain.proceed(arrayOf(true)),
+        //    且不能配 before 工具函数(其内部再 proceed() 双重执行), 直接 Hooker 拦截。
         safeHook("QSTileMinCountFix.6") {
-            val factoryCls = runCatching {
-                cl.findClassUp("com.android.systemui.shared.plugins.PluginInstance\$PluginFactory")
-            }.getOrNull()
+            // PluginFactory 多路加载(宿主类, MixFlipMod 用 param.classLoader 直查)
+            val factoryCls = sequenceOf(
+                runCatching { cl.findClassUp("com.android.systemui.shared.plugins.PluginInstance\$PluginFactory") }.getOrNull(),
+                runCatching { param.classLoader.loadClass("com.android.systemui.shared.plugins.PluginInstance\$PluginFactory") }.getOrNull(),
+            ).firstNotNullOfOrNull { it }
             if (factoryCls == null) {
                 log("QSTileMinCountFix: 保险6 PluginFactory 找不到, skip")
                 return@safeHook
@@ -97,22 +112,64 @@ object QSTileMinCountFixHook : BaseHook() {
                 val pluginLoader = wrapper.classLoader ?: return@after result
                 for (candidate in QS_RECORD_CANDIDATES) {
                     val cls = runCatching { pluginLoader.loadClass(candidate) }.getOrNull() ?: continue
-                    val setRemovable = runCatching {
-                        cls.method("setRemovable", Boolean::class.javaPrimitiveType!!)
-                    }.getOrNull()
+                    // 双签名候选: 原始 boolean + 包装 Boolean(防固件差异)
+                    val setRemovable = sequenceOf(
+                        runCatching { cls.method("setRemovable", Boolean::class.javaPrimitiveType!!) }.getOrNull(),
+                        runCatching { cls.method("setRemovable", Boolean::class.javaObjectType) }.getOrNull(),
+                    ).firstNotNullOfOrNull { it }
                     if (setRemovable == null) {
                         log("QSTileMinCountFix: 保险6 $candidate 无 setRemovable(boolean), skip")
                         continue
                     }
-                    hook(setRemovable, before { inner ->
-                        inner.args[0] = true
+                    // Pitfall #9: 不写 args, proceed(arrayOf(true)) 以 true 参数调用原方法
+                    hook(setRemovable, Hooker { inner ->
+                        inner.proceed(arrayOf<Any?>(true))
                     })
                     hooked = true
-                    log("QSTileMinCountFix: 保险6 ✓ ${cls.name}.setRemovable → 恒 true(减号恒显示)")
+                    log("QSTileMinCountFix: 保险6 ✓ ${cls.name}.setRemovable → proceed(true)(减号恒显示)")
                 }
                 result
             })
             log("QSTileMinCountFix: 保险6 PluginFactory.createPluginContext hooked")
+        }
+
+        // ── 保险 7(Compose 删除判定核心): EditTileListState.isDraggedCellRemovable() → 恒 true ──
+        // EditTileListState.java:57-64: DragType.Add→true; 否则 availableEditActions.contains(REMOVE)。
+        // Compose 编辑页删除/拖出目标判定唯一核心, 恒 true 绕过 minNumberOfTiles 判定(§43.6.3c ③)。
+        safeHook("QSTileMinCountFix.7") {
+            val candidates = listOf(
+                "com.android.systemui.qs.panels.ui.compose.EditTileListState",
+                "com.android.systemui.p037qs.panels.p041ui.compose.EditTileListState",
+            )
+            for (candidate in candidates) {
+                val cls = runCatching { cl.loadClass(candidate) }.getOrNull() ?: continue
+                val m = runCatching { cls.method("isDraggedCellRemovable") }.getOrNull()
+                    ?: run {
+                        log("QSTileMinCountFix: 保险7 $candidate 无 isDraggedCellRemovable(), skip")
+                        continue
+                    }
+                hook(m, replaceResult(true))
+                log("QSTileMinCountFix: 保险7 ✓ ${cls.name}.isDraggedCellRemovable → true")
+            }
+        }
+
+        // ── 保险 8(写库拦截解除): MiuiTileSpecRepository.getInterceptUpdateTiles() → false ──
+        // :176-180 = 零售模式 OR 超级省电模式 → addTile/removeTiles/setTiles 全拦(§43.6.3c ③)。
+        safeHook("QSTileMinCountFix.8") {
+            val candidates = listOf(
+                "com.android.systemui.qs.pipeline.data.repository.MiuiTileSpecRepository",
+                "com.android.systemui.p037qs.pipeline.data.repository.MiuiTileSpecRepository",
+            )
+            for (candidate in candidates) {
+                val cls = runCatching { cl.loadClass(candidate) }.getOrNull() ?: continue
+                val m = runCatching { cls.method("getInterceptUpdateTiles") }.getOrNull()
+                    ?: run {
+                        log("QSTileMinCountFix: 保险8 $candidate 无 getInterceptUpdateTiles(), skip")
+                        continue
+                    }
+                hook(m, replaceResult(false))
+                log("QSTileMinCountFix: 保险8 ✓ ${cls.name}.getInterceptUpdateTiles → false")
+            }
         }
 
         // ── 保险 1: Resources.getInteger → MIN_TILES(4) ──
