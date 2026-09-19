@@ -140,7 +140,7 @@ AGPL-3.0
 ### Flip2 排查结论（为什么"没有重量级上游"）
 - **无属性层大杀器**：`muiltdisplay_type` 无 Java 消费方（§34.5/34.7）；`multi_display_type 4→1` 不解决全屏（flip2 全屏链天然断，§34.2）
 - **全屏真凶** = AOSP `DISPLAY_CUTOUT` letterbox（§34.3），需 `WindowStateStubImpl.isMiuiLayoutInCutoutAlways→true`（服务端单点，flip2 实测未达）
-- **LSPosed 2.0.1 KSU 环境 system_server 注入异常**（scope 配置正常也可能不注入；app 进程正常）
+- **LSPosed 2.0.1 的 system_server 侧日志不可信**（2026-08-21 修正，refMD FoldState §41.2）：**并非"注入异常"** —— flip1 打不出 `onSystemServerStarting` 但 system_server hook **实测生效**（CutoutRemove 等）；判注入只能靠 zygote so 映射计数 / LSPosed manager 状态 / 行为实测，禁止用"没日志"下结论
 - **教训**：Flip1-only 机型守护会让 flip2 跳过（回归源）；scope 只覆盖勾选的应用（普通应用不注入）
 
 ### 开发指引
