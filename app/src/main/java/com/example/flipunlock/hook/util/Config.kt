@@ -107,6 +107,7 @@ object Config {
         "persist.flipunlock.ui.keyguardfix",
         "persist.flipunlock.identity.tinyscreen",
         "persist.flipunlock.ui.launcherdensity",
+        "persist.flipunlock.wallpaper.lock",
     )
 
     // Master switch
@@ -140,6 +141,9 @@ object Config {
     val keyguardFix: Boolean get() = enabled && raw("persist.flipunlock.ui.keyguardfix", true)
     // TinyScreenFixHook(属性层死角: getScreenType/isTinyScreen→false)开关
     val tinyScreenFix: Boolean get() = enabled && raw("persist.flipunlock.identity.tinyscreen", true)
+    // LockWallpaperFixHook(锁屏壁纸被 ambient 隐藏 → 强制不隐藏)开关
+    //   2026-09-24 新增: 修「锁屏没有壁纸 → 纯黑」(refMD §44.12)
+    val lockWallpaperFix: Boolean get() = enabled && raw("persist.flipunlock.wallpaper.lock", true)
 
     // UI
     val uiLockScreen: Boolean get() = enabled && raw("persist.flipunlock.ui.lockscreen", true)

@@ -15,6 +15,7 @@ import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.VolumeKeyRemapFixHook
 import com.example.flipunlock.hook.system_server.WallpaperFixHook
+import com.example.flipunlock.hook.system_server.LockWallpaperFixHook
 import com.example.flipunlock.hook.camera.CameraFixHook
 // import com.example.flipunlock.hook.systemui.FlashlightHook          // [2026-08-15 注释] 最小集合实验
 // import com.example.flipunlock.hook.systemui.NotifFlipTipFixHook     // [2026-08-15 注释] 最小集合实验
@@ -104,6 +105,7 @@ class Main : XposedModule() {
         // VolumeKeyRemapFixHook.hook(param)  // DISABLED(2026-08-29 用户决定): 音量键方向跟随旋转实测仍不生效
         //     (flip2 内外屏切换场景, ⑥v2+⑦ 已实现仍未解决), 保持音量键固定物理方向, 待后续深挖 §44.6 再启用
         WallpaperFixHook.hook(param)       // 壁纸尺寸钳制: flip1 右侧黑 + flip2 属性层背景一半黑(2026-08-21 重写恢复注册)
+        LockWallpaperFixHook.hook(param)   // 锁屏壁纸不被 ambient 隐藏(修「锁屏没有壁纸→纯黑」) [2026-09-24 新增, refMD §44.12]
         AodHook.hookFramework(param)       // AOD 外屏显示(flip1 only, flip2 内部 SKIP; #3 状态钉 DOZE_AOD) [2026-08-15 恢复]
     }
 
