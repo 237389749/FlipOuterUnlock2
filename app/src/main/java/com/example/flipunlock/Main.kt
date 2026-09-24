@@ -102,8 +102,7 @@ class Main : XposedModule() {
         // SubScreenGesture.hook(param)    // [OFF]
         // InputMethodHook.hook(param)     // [OFF]
         RotationFixHook.hook(param)        // 旋转解除(Lite 移植): MiuiOrientationImpl 折叠态开放旋转
-        // VolumeKeyRemapFixHook.hook(param)  // DISABLED(2026-08-29 用户决定): 音量键方向跟随旋转实测仍不生效
-        //     (flip2 内外屏切换场景, ⑥v2+⑦ 已实现仍未解决), 保持音量键固定物理方向, 待后续深挖 §44.6 再启用
+        VolumeKeyRemapFixHook.hook(param)  // 音量键方向跟随旋转 [2026-09-24 重新启用, 用户决定]
         WallpaperFixHook.hook(param)       // 壁纸尺寸钳制: flip1 右侧黑 + flip2 属性层背景一半黑(2026-08-21 重写恢复注册)
         LockWallpaperFixHook.hook(param)   // 锁屏壁纸不被 ambient 隐藏(修「锁屏没有壁纸→纯黑」) [2026-09-24 新增, refMD §44.12]
         AodHook.hookFramework(param)       // AOD 外屏显示(flip1 only, flip2 内部 SKIP; #3 状态钉 DOZE_AOD) [2026-08-15 恢复]

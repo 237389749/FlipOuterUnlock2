@@ -116,6 +116,59 @@ object RotationFixHook {
                 log("RotationFix: ✓ hooked DisplayRotationStubImpl.setUserRotation(int,int)")
             }.onFailure { log("RotationFix: ② StubImpl.setUserRotation failed: ${it.message}") }
 
+            // ── ⑦-F setUserRotationLockedForSettings → 强制 FREE（2026-09-24 新增, refMD §43.15）──
+            // 国际版(ruyi_global)新增的写入路径, ⑦-C/⑦-D 完全覆盖不到:
+            //   RotationPolicy.setRotationLockForAccessibility(ctx, enabled, isFolded, caller)  [framework 公开 API]
+            //     L96: wm.isDisplayFold() != isFolded → wm.setRotationLockForFold(enabled, -1, isFolded)
+            //       → WindowManagerServiceImpl:3007 setUserRotationForFold(...)
+            //         → DisplayRotationStubImpl:353 → :358 setUserRotationLockedForSettings(accel, rot, isFolded)
+            //           → :399-405 putInt("accelerometer_rotation_outer"/"_inner", mode)   ← ★ 绕过全部 ⑦ 层
+            // 设备实证: accelerometer_rotation=1(hook改的) 但 _inner=0(被这条链写成 LOCKED),
+            //           _outer 默认 1(FREE) → 内外屏读数不一致 → 部分页面/时序锁。
+            // 修法: mode(首参) == 1(LOCKED) → 改写成 0(FREE), 与 ⑦-C 同策略(用户已授权弃磁贴)。
+            runCatching {
+                val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotationStubImpl")
+                val method = cls.method("setUserRotationLockedForSettings",
+                    Int::class.javaPrimitiveType!!,
+                    Int::class.javaPrimitiveType!!,
+                    Boolean::class.javaPrimitiveType!!)
+                hook(method) { chain ->
+                    val mode = chain.args[0] as? Int
+                    val folded = chain.args[2] as? Boolean
+                    if (mode == 1) {
+                        log("RotationFix: ✓ setUserRotationLockedForSettings LOCKED→FREE (isFolded=$folded)")
+                        chain.proceed(arrayOf<Any?>(0, chain.args[1], chain.args[2]))
+                    } else {
+                        chain.proceed()
+                    }
+                }
+                log("RotationFix: ✓ hooked setUserRotationLockedForSettings [LOCKED→FREE, 国际版双 setting]")
+            }.onFailure { log("RotationFix: ⑦-F setUserRotationLockedForSettings failed: ${it.message}") }
+
+            // ── ⑦-G setUserRotationForFold → enable 恒 false（2026-09-24 新增, refMD §43.15）──
+            // 上层的"锁定"入口。⑦-F 已拦住实际写入, 本层再断一次源头(双保险):
+            //   L355 int userRotationMode = enable ? 1 : 0;  → enable=true 即 LOCKED
+            // 改 enable→false 后 userRotationMode=0(FREE), ⑦-F 收到的首参也是 0, 两层一致。
+            // 参数: (int currRotation, boolean enable, int rotation, boolean isFolded)
+            runCatching {
+                val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotationStubImpl")
+                val method = cls.method("setUserRotationForFold",
+                    Int::class.javaPrimitiveType!!,
+                    Boolean::class.javaPrimitiveType!!,
+                    Int::class.javaPrimitiveType!!,
+                    Boolean::class.javaPrimitiveType!!)
+                hook(method) { chain ->
+                    val enable = chain.args[1] as? Boolean
+                    if (enable == true) {
+                        log("RotationFix: ✓ setUserRotationForFold enable true→false (isFolded=${chain.args[3]})")
+                        chain.proceed(arrayOf<Any?>(chain.args[0], false, chain.args[2], chain.args[3]))
+                    } else {
+                        chain.proceed()
+                    }
+                }
+                log("RotationFix: ✓ hooked setUserRotationForFold [enable→false]")
+            }.onFailure { log("RotationFix: ⑦-G setUserRotationForFold failed: ${it.message}") }
+
             // ── ⑦-A DisplayRotationStubImpl.updateRotationMode() → no-op ──
             // 属性1下 mUserRotationModeOuter=1(LOCKED, 构造:78), MiuiSettingsObserver.observe(658)/
             // onChange(663) → updateRotationMode → setUserRotation(1,rot)(260) → 写 settings

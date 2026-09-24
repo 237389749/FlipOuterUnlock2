@@ -68,7 +68,12 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *     折叠↔展开切换时主动调 handleVolumeKeyRemap(新 fold, 当前 rotation) → 立即 remap/restore
  *     (原生 fold 回调链断, 无此驱动则切换后不更新; ②⑤ 记录的 mirkInstance 直接驱动)
  *
- * 进程: system_server(flip2 注入正常可生效; flip1 断路装不上, 无影响)。
+ * 进程: system_server。
+ *   ⚠️ 2026-09-24 订正: 原文写「flip1 断路装不上, 无影响」——**该判断已作废**。
+ *   同进程的 RotationFixHook 在 flip1 ruyi_global 上**实测生效**(refMD §43.15 四证据:
+ *   Main.kt 无注释 / 属性缺省 true / 日志实时打 ⑦-E+④ / 行为侧 accelerometer_rotation=1)。
+ *   按 refMD §41.2「无日志 ≠ 未注入」铁律, flip1 的 system_server 注入是**可靠的**,
+ *   只是 onSystemServerStarting 日志可能不出。故本 hook 在 flip1 上也应生效, 待装机验证。
  */
 object VolumeKeyRemapFixHook {
 
