@@ -10,6 +10,7 @@ import com.example.flipunlock.hook.system_server.AppFullscreen
 // import com.example.flipunlock.hook.system_server.AppRestriction     // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.system_server.DisplayStateHook
+import com.example.flipunlock.hook.system_server.Flip1OuterCutoutHook
 import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.VolumeKeyRemapFixHook
@@ -85,6 +86,13 @@ class Main : XposedModule() {
         }
         if (isFlip2Device()) {
             Flip2CutoutLetterboxHook.hook(param)   // flip2 letterbox 豁免(与 CutoutRemove 同开, 用户要求)
+        }
+        // flip1 + 属性层(2026-09-24 新增): 原假设"flip1 由属性层覆盖"在国际版 ruyi_global 下不成立
+        // —— 实测外屏 display0 cutout=Rect(398,0-0,0) 真实存在, 第三方应用 mAppBounds 被切到
+        // Rect(398,0-1208,1392), letterboxReason=DISPLAY_CUTOUT(命中第 3 条, 非 MIUI size-compat)。
+        // 只清外屏(displayId 0), 不动内屏 146px 刘海 → 规避 refMD §28.2 的 AOD NPE 链。
+        if (!isFlip2Device()) {
+            Flip1OuterCutoutHook.hook(param)
         }
         DisplayStateHook.hook(param)         // DeviceState 钉死: 1b 恒布局 + getCurrentState(flip2→6 双屏/ flip1→0 外屏)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
