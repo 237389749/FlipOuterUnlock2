@@ -13,6 +13,7 @@ import com.example.flipunlock.hook.system_server.AppContinuity
 import com.example.flipunlock.hook.system_server.AppFullscreen
 import com.example.flipunlock.hook.system_server.AppRestriction
 import com.example.flipunlock.hook.system_server.AppWhitelist
+import com.example.flipunlock.hook.system_server.CutoutAlways
 import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.SubScreenGesture
@@ -64,6 +65,7 @@ class Main : XposedModule() {
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
         log("Main: onSystemServerStarting — resetprop 方案精简集")
         RotationFixHook.hook(param)   // 方向修复：DisplayRotation.setUserRotation LOCKED→FREE
+        CutoutAlways.hook(param)      // 全 ALWAYS：第三方应用外屏全屏（属性层下 isFlipFolded 兜底失效）
         // [DISABLED 2026-08-10 resetprop 方案] 其他 system_server hooks 全部注释：
         // AppRestriction.hook(param)   // resetprop 已解除外屏启动限制
         // AppWhitelist.hook(param)
