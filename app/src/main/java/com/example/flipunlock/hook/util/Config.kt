@@ -106,6 +106,7 @@ object Config {
         "persist.flipunlock.volume.keyremap",
         "persist.flipunlock.ui.keyguardfix",
         "persist.flipunlock.identity.tinyscreen",
+        "persist.flipunlock.settings.imebottom",
         "persist.flipunlock.ui.launcherdensity",
         "persist.flipunlock.wallpaper.lock",
     )
@@ -144,6 +145,10 @@ object Config {
     // LockWallpaperFixHook(锁屏壁纸被 ambient 隐藏 → 强制不隐藏)开关
     //   2026-09-24 新增: 修「锁屏没有壁纸 → 纯黑」(refMD §44.12)
     val lockWallpaperFix: Boolean get() = enabled && raw("persist.flipunlock.wallpaper.lock", true)
+    // ImeBottomSupportHook(设置「全面屏键盘优化」入口: 国际版硬隐藏解除)开关
+    //   2026-09-24 新增: ruyi_global Settings 反编译 — isMiuiImeBottomSupport() 的
+    //   !IS_INTERNATIONAL_BUILD 使整块分类被 removePreference。需 scope 勾选 com.android.settings
+    val settingsImeBottom: Boolean get() = enabled && raw("persist.flipunlock.settings.imebottom", true)
 
     // UI
     val uiLockScreen: Boolean get() = enabled && raw("persist.flipunlock.ui.lockscreen", true)

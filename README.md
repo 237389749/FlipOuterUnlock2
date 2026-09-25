@@ -2,6 +2,7 @@
 
 > LSPosed module for Xiaomi MIX Flip — make the outer screen behave like a normal phone display.
 > 2026-08-22 审查更新: 功能清单/架构图/开关表对齐 Main.kt 实际注册状态。
+> 2026-09-24 新增 `ImeBottomSupportHook`: 恢复设置「全面屏键盘优化」入口（国际版硬隐藏）。
 
 **One-liner**: Remove cutout, force fullscreen, unlock rotation, fix control center (tile editing + landscape width), fix camera/volume-key/wallpaper, keep outer-screen AOD.
 
@@ -34,6 +35,7 @@
 **SystemUI stability & identity**
 - `SystemUiKeyguardFix` — TinyKeyguardPanel crash-loop guard (flip1 only)
 - `TinyScreenFixHook` — `getScreenType→0` + `isTinyScreen/isFlipTinyScreen→false` (property-layer blind spots)
+- `ImeBottomSupportHook` — restore Settings 「全面屏键盘优化」 entry (`settings`; hidden on international builds by `IS_INTERNATIONAL_BUILD`)
 
 **Camera** (camera)
 - `CameraFixHook` — outer-screen camera upside-down + black bars (property-1 side effect, `multi_display_type→4`)
@@ -44,7 +46,7 @@
 **Gestures** (miuihome)
 - `SFDeviceGestureHook` — outer-screen swipe-up gesture + gesture-disappear no-op guard
 
-### Hook Architecture (aligned with Main.kt, 2026-08-22)
+### Hook Architecture (aligned with Main.kt, 2026-09-24)
 
 ```
 onSystemServerStarting (system_server):
@@ -64,6 +66,7 @@ onPackageReady (app processes, one file = one feature):
 ├── QSPanelWidthFixHook        [systemui]     ← landscape panel width fill screen
 ├── AodHook                    [aod] (flip1)  ← outer AOD
 ├── TinyScreenFixHook          [identity]     ← getScreenType→0 / isTinyScreen→false
+├── ImeBottomSupportHook       [settings]     ← restore 「全面屏键盘优化」 settings entry
 └── CameraFixHook              [camera]       ← outer camera orientation + black bars
 
 [OFF] 保留未注册(注释于 Main.kt, 便于恢复, HANDOFF §8):
@@ -102,6 +105,7 @@ reboot
 | `persist.flipunlock.ui.qspanelwidth` | true | Landscape panel width fill |
 | `persist.flipunlock.ui.keyguardfix` | true | Keyguard crash-loop guard (flip1) |
 | `persist.flipunlock.identity.tinyscreen` | true | getScreenType/isTinyScreen spoof |
+| `persist.flipunlock.settings.imebottom` | true | Restore 「全面屏键盘优化」 settings entry |
 | `persist.flipunlock.gesture.sf` | true | Gesture no-op guard (miuihome) |
 | `persist.flipunlock.display.dual` | true | Dual display *(hook [OFF] 未注册)* |
 | `persist.flipunlock.app.continuity` | true | Fold/unfold continuity *(hook [OFF])* |
@@ -113,7 +117,7 @@ reboot
 
 ### LSP Scope
 
-system, systemui, aod, camera, fliphome, sogou, miuihome, gallery
+system, systemui, aod, camera, fliphome, sogou, miuihome, gallery, settings *(check manually — required by `ImeBottomSupportHook`)*
 
 ### Requirements
 
@@ -165,6 +169,7 @@ AGPL-3.0
 **SystemUI 稳定与身份**
 - `SystemUiKeyguardFix` — TinyKeyguardPanel 崩溃环兜底（flip1）
 - `TinyScreenFixHook` — `getScreenType→0` + `isTinyScreen/isFlipTinyScreen→false`（属性层死角）
+- `ImeBottomSupportHook` — 恢复设置「全面屏键盘优化」入口（`settings`；国际版被 `IS_INTERNATIONAL_BUILD` 硬隐藏）
 
 **相机**（camera）
 - `CameraFixHook` — 外屏相机倒置+黑边（属性1副作用，`multi_display_type→4`）
@@ -175,7 +180,7 @@ AGPL-3.0
 **手势**（miuihome）
 - `SFDeviceGestureHook` — 外屏上滑手势 + 手势防消失 no-op
 
-### Hook 架构（对齐 Main.kt，2026-08-22）
+### Hook 架构（对齐 Main.kt，2026-09-24）
 
 ```
 onSystemServerStarting (system_server):
@@ -195,6 +200,7 @@ onPackageReady (app 进程, 一文件一功能):
 ├── QSPanelWidthFixHook        [systemui]     ← 横屏面板宽撑满
 ├── AodHook                    [aod] (flip1)  ← 外屏 AOD
 ├── TinyScreenFixHook          [identity]     ← getScreenType→0 / isTinyScreen→false
+├── ImeBottomSupportHook       [settings]     ← 恢复「全面屏键盘优化」设置入口
 └── CameraFixHook              [camera]       ← 外屏相机方向 + 黑边
 
 [OFF] 保留未注册（Main.kt 注释, 便于恢复, HANDOFF §8）:
@@ -233,6 +239,7 @@ reboot
 | `persist.flipunlock.ui.qspanelwidth` | true | 横屏面板宽撑满 |
 | `persist.flipunlock.ui.keyguardfix` | true | 锁屏崩溃兜底（flip1） |
 | `persist.flipunlock.identity.tinyscreen` | true | getScreenType/isTinyScreen 伪装 |
+| `persist.flipunlock.settings.imebottom` | true | 恢复设置「全面屏键盘优化」入口 |
 | `persist.flipunlock.gesture.sf` | true | 手势防消失（miuihome） |
 | `persist.flipunlock.display.dual` | true | 双屏显示 *(hook [OFF] 未注册)* |
 | `persist.flipunlock.app.continuity` | true | 折叠续接 *(hook [OFF])* |
@@ -244,7 +251,7 @@ reboot
 
 ### LSP Scope
 
-system, systemui, aod, camera, fliphome, sogou, miuihome, gallery
+system, systemui, aod, camera, fliphome, sogou, miuihome, gallery, settings *(需手动勾选，`ImeBottomSupportHook` 依赖)*
 
 ### 依赖
 

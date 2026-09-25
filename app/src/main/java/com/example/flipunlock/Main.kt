@@ -6,6 +6,7 @@ import com.example.flipunlock.hook.identity.CameraCutoutFixHook
 // import com.example.flipunlock.hook.identity.Flip1AodIdentityHook  // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.identity.TinyScreenFixHook
 import com.example.flipunlock.hook.miuihome.SFDeviceGestureHook
+import com.example.flipunlock.hook.settings.ImeBottomSupportHook
 import com.example.flipunlock.hook.system_server.AppFullscreen
 // import com.example.flipunlock.hook.system_server.AppRestriction     // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.system_server.CutoutRemove
@@ -60,6 +61,7 @@ class Main : XposedModule() {
         AodHook,                        // AOD 外屏显示(flip1 only; 内部 gate: flip2 SKIP) [2026-08-15 恢复]
         // Flip1AodIdentityHook,         // [2026-08-15 注释] 最小集合实验
         TinyScreenFixHook,              // 属性层死角: getScreenType→0 + isTinyScreen/isFlipTinyScreen→false(修 TIM 通知弹提示)
+        ImeBottomSupportHook,           // 设置「全面屏键盘优化」入口: 国际版 IS_INTERNATIONAL_BUILD 硬隐藏解除(scope 需含 com.android.settings)
         CameraFixHook,                  // 相机进程内 multi_display_type→4: 修 flip 外屏相机倒置+黑边(属性1副作用) [2026-08-15 恢复, flip1/2 通用]
         // CameraCutoutFixHook,         // 相机 NPE 防御 —— 由 CutoutRemove.hookApp(camera) 已覆盖, 不重复
         // DeviceIdentityHook,          // [OFF] 属性层模块已覆盖身份
