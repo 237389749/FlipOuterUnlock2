@@ -101,6 +101,7 @@ object Config {
         "persist.flipunlock.ui.recentsmenu",
         "persist.flipunlock.ui.qstilemin",
         "persist.flipunlock.ime",
+        "persist.flipunlock.ime.navbar",
         "persist.flipunlock.camera",
         "persist.flipunlock.camera.fix",
         "persist.flipunlock.volume.keyremap",
@@ -149,6 +150,10 @@ object Config {
     //   2026-09-24 新增: ruyi_global Settings 反编译 — isMiuiImeBottomSupport() 的
     //   !IS_INTERNATIONAL_BUILD 使整块分类被 removePreference。需 scope 勾选 com.android.settings
     val settingsImeBottom: Boolean get() = enabled && raw("persist.flipunlock.settings.imebottom", true)
+    // ImeNavBarFixHook(输入法底部 48dp 导航栏 ⌄/🌐 → 高度归 0)开关
+    //   2026-09-25 新增: framework NavigationBarController$Impl 在 IME 窗口底部装 48dp NavigationBarFrame
+    //   (dimen navigation_bar_frame_height)。需 scope 勾选输入法包(见 targetPackages)
+    val imeNavBarFix: Boolean get() = enabled && raw("persist.flipunlock.ime.navbar", true)
 
     // UI
     val uiLockScreen: Boolean get() = enabled && raw("persist.flipunlock.ui.lockscreen", true)
