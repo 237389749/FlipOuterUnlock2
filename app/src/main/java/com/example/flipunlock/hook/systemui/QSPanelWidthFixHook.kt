@@ -6,70 +6,84 @@ import android.content.ContextWrapper
 import android.view.Surface
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.util.*
+import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
- * 横屏控制中心磁贴布局宽度固定 → 双面板撑满屏幕宽度（2026-08-22 初版, refMD §43.6.7;
- * 2026-09-25 国际版诊断版: 修"首个 createPluginContext 不是控制中心插件"导致的静默锁定 + 补全日志）。
+ * 横屏控制中心"右侧固定磁贴被挤出屏外" → 双面板放不下时退回单面板并撑满屏宽
+ * （2026-08-22 初版"切两半"; 2026-09-25 读插件反编译 + 实机视图树 dump 后重写为 v3）。
  *
- * 现象（用户实测, 2026-08-22 → 2026-09-25 仍复现）: 横屏下磁贴布局宽度固定, 即便磁贴很少也不变;
- * 右侧固定磁贴(亮度/音量等 4 项)被挤出屏幕外。
+ * ── 现象（flip1 国际版 ruyi_global 实机复现, 2026-09-30）──
+ * 外屏(display 0, 1208x1392@520dpi)旋转到横屏后打开控制中心:
+ * 顶部只剩几个磁贴、右侧 WiFi/媒体/亮度/音量等固定磁贴被切在屏幕右缘外。
+ * 实测视图树(修复前): 左面板 `main_panel 0,0-1052,1208` + 右面板 `main_panel 1136,0-2188,1208`
+ *   → 两面板总宽 2188px, 而屏宽仅 1392px → 右面板只有左边缘 256px 可见。
  *
- * 根因（3 agent 实锤, flip2-systemuiplugin/b5c1 systemui-plugin 一致; refMD §43.6.7）:
- *   flip 内屏样式版控制中心由 systemui-plugin 插件接管, 宽度/列数全部硬编码:
- *   - MainPanelController.updatePanelWidth()(:610-612): panelWidth =
- *     style==COMPACT ? control_center_universal_3_rows_with_margin_size(256.5dp)
- *     : control_center_universal_4_rows_with_margin_size(**342dp**)——HORIZONTAL/
- *     VERTICAL/WIDE_VERTICAL 共用, 且该 dimens **无 values-land 覆盖** → 横屏仍 342dp
- *   - MainPanelAdapter.updateSpanCount()(:325-328): 列数 COMPACT?3:4 固定
- *   - 无 auto-fit: GridLayoutManager 固定 span 均分, 无按磁贴数量收缩/撑开机制
- *   - **横屏唯一结构差异** = updateUseSeparatedPanels()(:958-960): !getInVerticalMode() →
- *     双面板并排(left 磁贴 + right 固定磁贴, 中缝 control_center_horizontal_margin_center=27.4dp,
- *     总宽 342×2+27.4≈711dp)——外屏横屏宽仅 1392px≈398dp(@560dpi) → 右侧面板整个被挤出屏外
- *   - 主 APK 侧列数资源化(land infinite_grid=8/num_columns=5)但插件接管后不参与
+ * ── 根因（插件 miui.systemui.plugin 反编译实锤, /product/app/MIUISystemUIPlugin）──
+ * `MainPanelController.updateResources()`(:897-905):
+ *   updatePanelWidth → updateUseSeparatedPanels → updatePanelStyle → updatePanelSize
+ * - `updatePanelWidth()`(:559-560): panelWidth = style==COMPACT ? dimen(3_rows) : dimen(**4_rows**)
+ *   = `control_center_universal_4_rows_with_margin_size` = **1052px**(323.7dp) —— 与横竖屏无关
+ * - `updateUseSeparatedPanels()`(:907-909): `setUseSeparatedPanels(!getInVerticalMode(ctx))`
+ *   → **横屏(orientation==2) 一律双面板**; `setUseSeparatedPanels`(:506-519) 把 leftMainPanel
+ *   加回容器并设 panelMargin = `control_center_horizontal_margin_center`(84px)
+ * - `getPanelContainerWidth()`(:665-667) = separated ? panelWidth*2+margin : panelWidth
+ * - `CommonUtils.getInVerticalMode(ctx)`(:542-545) = getForceVertical() || orientation==1
+ *   (`getForceVertical()` = IS_TABLET || (IS_FOLD && USING_LARGE_SCREEN), flip 恒 false)
+ * ⇒ 双面板总宽 = 1052*2+84 = **2188px**; 该设计只在内屏横屏(1080x2340 → 横屏宽 2340)放得下。
+ *   外屏横屏宽 1392px 放不下 → 右面板(承载 WiFi/流量卡/媒体/亮度/音量等固定项)被挤出屏外。
  *
- * 国际版(ruyi_global)本机核实（2026-09-25, res/FlipRes_global 反编译）:
- *   - 宿主侧**改不动宽度**: ControlCenterContainerController.onContentAttached(:131-137) 把插件
- *     内容视图以 MATCH_PARENT 加进 content_container; 宿主只读 getPanelBorder() 算通知栏/控制中心
- *     滑动切换距离(ShadeSwitchControllerImpl:408-456) → 面板几何完全由插件决定, 必须走插件 hook
- *   - 宿主 res 只有 control_center_universal_4_rows_with_margin_size=342dp 与
- *     control_center_horizontal_margin_center=27.4dp, **均无 values-land 覆盖**（与插件侧一致）
- *   - PluginContextWrapper extends ContextWrapper(PluginActionManager:78-102) → 路径 A 取
- *     wrapper.classLoader 成立; 插件类名仍是 jadx 明文 miui.systemui.controlcenter.panel.main.*
- *   - ⚠️ 插件 APK(/product/app/MIUISystemUIPlugin/MIUISystemUIPlugin.apk) **尚未反编译**,
- *     上面行号/字段名来自国内版插件 → 本次先补日志, 装机日志可确认国际版是否同构
+ * ── 为什么不是"把两个面板各切一半"（v2 实测否决）──
+ * v2 只改 `panelWidth`(=654px/面板) 实测: 面板框对了, 但插件内部大量尺寸是**固定 dimen/绑定期算好**的:
+ * - 磁贴格宽跟随面板(654/4=163 ✓), 但磁贴高度仍是旧值 263 → 圆形磁贴互相重叠
+ * - 亮度/音量滑块宽固定 220px(`ToggleSliderViewHolder`:375-382) > 新格宽 163 → 溢出面板
+ * - 媒体卡宽 = 绑定期按旧面板算的 483 → 与卡片列(283)不一致
+ * ⇒ 逐项去缩放插件的固定尺寸不可维护; 真正与插件设计一致的做法是"**放不下就别分栏**"。
  *
- * 修复（用户确认目标 ② 横屏撑满屏幕宽度）:
- *   hook MainPanelController.updatePanelWidth() after → **横屏**且双面板总宽放不下时
- *   panelWidth = (屏宽 - 中缝)/2（两面板+中缝正好铺满, 保留中缝）;
- *   updateResources 顺序 = updatePanelWidth → updateUseSeparatedPanels →
- *   updatePanelStyle → updatePanelSize → 改 panelWidth 后 updatePanelSize 自然用新值;
- *   竖屏不动(单面板 342dp), 转回竖屏自动恢复。
- *   判定条件用 **屏宽>屏高**（不是 style==HORIZONTAL）: refMD 实锤"横屏唯一结构差异 = 双面板",
- *   而样式在属性层/国际版下可能是 COMPACT(3 列) 或 HORIZONTAL(4 列) —— 初版只认 HORIZONTAL,
- *   若实际是 COMPACT 则整个 hook 静默跳过(用户"固定三列"现象吻合 COMPACT)。
+ * ── v3 修复（上游, 单点）──
+ * hook `miui.systemui.util.CommonUtils.getInVerticalMode(Context)` → 满足以下条件时返回 true:
+ *   横屏(dm 或 Display.rotation) 且 `2*panelWidth + 中缝 > 屏宽`（双面板确实放不下）
+ * 这一个开关即可让插件全套逻辑退回"竖屏版式"（= 外屏竖屏时用户已熟悉的单面板版式）:
+ * - `updateUseSeparatedPanels` → separated=false（左面板从容器移除）
+ * - `MainPanelContentDistributor.distributePanels` 默认值 `!getInVerticalMode()` → false
+ *   → **全部内容进同一面板**(:183-195)，不再分左右
+ * - `SecondaryPanelControllerBase.updateContainerConstraint`(:179) / 亮度音量内部版式
+ *   → 走竖屏分支（否则二级面板会按"面板宽+中缝"定位到屏外）
+ * 另 hook `MainPanelController.updatePanelWidth()` after → 单面板时把宽度撑到
+ * `屏宽 - 2*control_center_force_vertical_margin_end`（左右等边距, 满足"横屏撑满"诉求）。
+ * 内屏横屏 2340px ≥ 2188px → 条件不成立 → **双面板横屏原样保留**（不动内屏）。
+ * 竖屏一律不动; 转回竖屏自动恢复（每次 updateResources 都重算）。
  *
  * 注入: 路径 A(§43.6.3b)——插件类在宿主 classloader 的【子级】独立 PathClassLoader,
  *   hook PluginFactory.createPluginContext() after 拿 ContextWrapper.classLoader;
- *   插件运行在 com.android.systemui 进程(manifest 无独立进程, §43.6.3b ①)。
+ *   插件运行在 com.android.systemui 进程(manifest 无独立进程)。
  * 开关: persist.flipunlock.ui.qspanelwidth（默认 true）
  */
 object QSPanelWidthFixHook : BaseHook() {
 
     override val targetPackages = listOf("com.android.systemui", "android")
 
-    /** MainPanelController 候选类名: 设备 dex 明文 + jadx 反混淆产物防御。 */
+    /** 控制中心面板控制器候选类名: 设备 dex 明文 + jadx 反混淆产物防御。 */
     private val CONTROLLER_CANDIDATES = listOf(
         "miui.systemui.controlcenter.panel.main.MainPanelController",
         "miui.systemui.controlcenter.panel.main.p113qs.MainPanelController",
     )
 
+    /** 插件工具类（getInVerticalMode 总闸）。 */
+    private val COMMON_UTILS_CANDIDATES = listOf(
+        "miui.systemui.util.CommonUtils",
+    )
+
     private const val STYLE_CLASS =
         "miui.systemui.controlcenter.panel.main.MainPanelController\$Style"
 
+    /** 插件 dimen 缓存（配置不变时恒定）。 */
+    @Volatile private var dimenPanelWidth = -1
+    @Volatile private var dimenCenterMargin = -1
+    @Volatile private var dimenEndMargin = -1
+
     /** 竖屏日志只打一次, 避免 updateResources 反复刷屏。 */
-    @Volatile
-    private var portraitLogged = false
+    @Volatile private var portraitLogged = false
 
     override fun setupHooks(param: PackageReadyParam) {
         if (!Config.qsPanelWidth) {
@@ -109,9 +123,8 @@ object QSPanelWidthFixHook : BaseHook() {
                 val component = runCatching {
                     chain.thisObject?.getField("mComponentName") as? ComponentName
                 }.getOrNull()
-                // ⚠️ 初版缺陷: 这里先 hooked=true 再 installHooks, 而 SystemUI 进程会为多个插件
-                //    (手电筒/磁贴/通知等, 未必都来自 miui.systemui.plugin) 调 createPluginContext
-                //    → 首个若不含控制中心类, 锁定后永远装不上且无日志。改: **命中类才锁定**。
+                // SystemUI 进程会为多个插件(AOD/全局操作/控制中心…, 不同 APK)调 createPluginContext;
+                // 必须**命中控制中心类才锁定**, 否则首个插件就把 hook 位占死(初版静默失效根因)。
                 if (installHooks(pluginLoader)) {
                     hooked = true
                     log("QSPanelWidthFix: 插件 classloader 命中 (component=$component)")
@@ -126,16 +139,28 @@ object QSPanelWidthFixHook : BaseHook() {
 
     /** 命中插件类并装好 hook 返回 true; 不是控制中心插件返回 false（继续等下一个）。 */
     private fun installHooks(pluginLoader: ClassLoader): Boolean {
-        // Style 枚举（日志用: 确认国际版样式是 COMPACT 还是 HORIZONTAL）
         val styleCls = runCatching { pluginLoader.loadClass(STYLE_CLASS) }.getOrNull() ?: return false
         val styleFields = styleCls.enumConstants?.joinToString(",") { it.toString() } ?: "?"
 
-        // 中缝 dimen id（control_center_horizontal_margin_center）
-        val marginResId = runCatching {
-            pluginLoader.loadClass("miui.systemui.controlcenter.R\$dimen")
-                .field("control_center_horizontal_margin_center").getInt(null)
-        }.getOrNull()
+        // ── ① 总闸: getInVerticalMode → 双面板放不下时按竖屏处理 ──
+        var verticalHooked = false
+        for (name in COMMON_UTILS_CANDIDATES) {
+            val cls = runCatching { pluginLoader.loadClass(name) }.getOrNull() ?: continue
+            val m = runCatching { cls.method("getInVerticalMode", Context::class.java) }.getOrNull()
+                ?: run {
+                    log("QSPanelWidthFix: $name 无 getInVerticalMode(Context), skip")
+                    continue
+                }
+            hook(m, Hooker { chain ->
+                val ctx = chain.args.getOrNull(0) as? Context
+                if (ctx != null && !fitsTwoPanels(ctx)) true else chain.proceed()
+            })
+            verticalHooked = true
+            log("QSPanelWidthFix: ✓ $name.getInVerticalMode → 双面板放不下时 true(退回单面板)")
+        }
+        if (!verticalHooked) log("QSPanelWidthFix: CommonUtils.getInVerticalMode 未命中, 仅做宽度兜底")
 
+        // ── ② 宽度: 单面板时撑满屏宽（左右等边距）──
         for (candidate in CONTROLLER_CANDIDATES) {
             val cls = runCatching { pluginLoader.loadClass(candidate) }.getOrNull() ?: continue
             val updatePanelWidth = runCatching { cls.method("updatePanelWidth") }.getOrNull()
@@ -145,40 +170,29 @@ object QSPanelWidthFixHook : BaseHook() {
                 }
             hook(updatePanelWidth, after { chain, result ->
                 val controller = chain.thisObject ?: return@after result
-                val style = runCatching { controller.callMethod("getStyle") }.getOrNull()
                 val ctx = runCatching { controller.callMethod("getContext") as? Context }.getOrNull()
                 if (ctx == null) {
                     log("QSPanelWidthFix: getContext() 取不到, skip")
                     return@after result
                 }
+                val style = runCatching { controller.callMethod("getStyle") }.getOrNull()
                 val dm = ctx.resources.displayMetrics
-                // 横屏判定双信号: Resources 未刷新时 dm 仍可能是竖屏(refMD §43.6 已知坑),
-                // 故叠加 Display.rotation(真实物理方向)。
-                val rotation = runCatching { ctx.display?.rotation }.getOrNull()
-                val landscape = dm.widthPixels > dm.heightPixels ||
-                    rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270
                 val old = runCatching { controller.getField("panelWidth") as? Int }.getOrNull() ?: -1
-                // 竖屏(单面板): 保持插件原值
-                if (!landscape) {
-                    if (!portraitLogged) {
+                if (fitsTwoPanels(ctx)) {
+                    // 竖屏, 或横屏但双面板放得下(内屏) → 保持插件原值
+                    if (dm.widthPixels <= dm.heightPixels && !portraitLogged) {
                         portraitLogged = true
-                        log("QSPanelWidthFix: 竖屏不动 panelWidth=$old style=$style 屏 ${dm.widthPixels}x${dm.heightPixels} rotation=$rotation")
+                        log("QSPanelWidthFix: 竖屏不动 panelWidth=$old style=$style 屏 ${dm.widthPixels}x${dm.heightPixels}")
                     }
                     return@after result
                 }
-                val margin = marginResId
-                    ?.let { runCatching { ctx.resources.getDimensionPixelSize(it) }.getOrNull() } ?: 0
-                // 双面板(2×panelWidth+中缝)已经放得下 → 不动, 避免误缩窄
-                if (old <= 0 || old * 2 + margin <= dm.widthPixels) {
-                    log("QSPanelWidthFix: 横屏放得下, 不动 (panelWidth=$old 屏宽=${dm.widthPixels} 中缝=$margin style=$style rotation=$rotation)")
-                    return@after result
-                }
-                val newWidth = (dm.widthPixels - margin) / 2
-                if (newWidth > 0) {
+                val end = pluginDimen(ctx, "control_center_force_vertical_margin_end", 2)
+                val newWidth = dm.widthPixels - end * 2
+                if (newWidth > 0 && newWidth != old) {
                     runCatching { controller.setField("panelWidth", newWidth) }
                         .onSuccess {
-                            log("QSPanelWidthFix: 横屏面板宽 $old → $newWidth px " +
-                                "(屏 ${dm.widthPixels}x${dm.heightPixels} 中缝=$margin style=$style rotation=$rotation) — 双面板撑满")
+                            log("QSPanelWidthFix: 横屏双面板放不下 → 单面板宽 $old → $newWidth px " +
+                                "(屏 ${dm.widthPixels}x${dm.heightPixels} 边距=$end style=$style) — 撑满")
                         }
                         .onFailure { log("QSPanelWidthFix: setField(panelWidth) 失败: ${it.message}") }
                 }
@@ -189,5 +203,40 @@ object QSPanelWidthFixHook : BaseHook() {
         }
         log("QSPanelWidthFix: 插件有 Style 类但无候选 MainPanelController, 等下一个插件")
         return false
+    }
+
+    /**
+     * 双面板(2×panelWidth+中缝)在**当前屏宽**下是否放得下。
+     * 放得下(竖屏 / 内屏横屏) → 保持插件原生行为; 放不下(外屏横屏) → 退回单面板。
+     */
+    private fun fitsTwoPanels(ctx: Context): Boolean {
+        val dm = ctx.resources.displayMetrics
+        val rotation = runCatching { ctx.display?.rotation }.getOrNull()
+        val landscape = dm.widthPixels > dm.heightPixels ||
+            rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270
+        if (!landscape) return true
+        val panel = pluginDimen(ctx, "control_center_universal_4_rows_with_margin_size", 0)
+        val center = pluginDimen(ctx, "control_center_horizontal_margin_center", 1)
+        if (panel <= 0) return true // dimen 取不到 → 不冒险
+        return panel * 2 + center <= dm.widthPixels
+    }
+
+    /** 取插件资源 dimen(按资源名, 不依赖 R 类混淆名); 取不到返回 -1。 */
+    private fun pluginDimen(ctx: Context, name: String, slot: Int): Int {
+        val cache = when (slot) {
+            0 -> dimenPanelWidth
+            1 -> dimenCenterMargin
+            else -> dimenEndMargin
+        }
+        if (cache >= 0) return cache
+        val res = ctx.resources
+        val id = runCatching { res.getIdentifier(name, "dimen", ctx.packageName) }.getOrNull() ?: 0
+        val value = if (id != 0) runCatching { res.getDimensionPixelSize(id) }.getOrDefault(-1) else -1
+        when (slot) {
+            0 -> dimenPanelWidth = value
+            1 -> dimenCenterMargin = value
+            else -> dimenEndMargin = value
+        }
+        return value
     }
 }

@@ -31,7 +31,7 @@
 
 **Control Center** (systemui)
 - QS tile edit minimum removal — `QSTileMinCountFixHook`: plugin `QSRecord.setRemovable → true` (landscape/inner-style VERTICAL control center) + AOSP/Compose fallbacks
-- Landscape tile layout width — `QSPanelWidthFixHook`: `MainPanelController.updatePanelWidth` → in landscape, when the two plugin panels (2×panelWidth + center gap) don't fit the screen, fill the width
+- Landscape control center — `QSPanelWidthFixHook`: when the plugin's two panels (2×1052px + center gap) don't fit the screen, `CommonUtils.getInVerticalMode` is forced true (single panel = portrait layout) and the panel is widened to fill, so the fixed tiles (WiFi/media/brightness/volume) are no longer pushed off-screen
 
 **SystemUI stability & identity**
 - `SystemUiKeyguardFix` — TinyKeyguardPanel crash-loop guard (flip1 only)
@@ -170,7 +170,7 @@ AGPL-3.0
 
 **控制中心**（systemui）
 - 磁贴编辑下限解除 — `QSTileMinCountFixHook`：插件 `QSRecord.setRemovable → true`（内屏样式 VERTICAL 控制中心）+ AOSP/Compose 兜底
-- 横屏磁贴布局撑满 — `QSPanelWidthFixHook`：`MainPanelController.updatePanelWidth` → 横屏且双面板(2×panelWidth+中缝)放不下时撑满屏宽
+- 横屏控制中心 — `QSPanelWidthFixHook`：插件双面板(2×1052px+中缝)放不下屏宽时，强制 `CommonUtils.getInVerticalMode`→true（退回单面板＝竖屏版式）并把面板撑满，固定磁贴(WiFi/媒体/亮度/音量)不再被挤出屏外
 
 **SystemUI 稳定与身份**
 - `SystemUiKeyguardFix` — TinyKeyguardPanel 崩溃环兜底（flip1）
