@@ -5,265 +5,258 @@ import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 
 /**
- * 恢复 flip 折叠态音量键方向跟随旋转（2026-08-15 + 2026-08-16 #23 补强 + 2026-08-21 #23 方案2）。
+ * 恢复 flip 折叠态「音量键方向跟随旋转」（v3，2026-09-30 国际版 ruyi_global 实机定位后重写）。
  *
- * 背景（flip2-miui-services 反编译实锤）:
- *   BaseMiuiPhoneWindowManager:336
- *     if (MiInputKeyRemap.supportVolumeKeyRemap()) {   ← 属性 1 → false → 整个功能不启动!
- *         mMiInputKeyRemap.notifyFoldStatus(folded);
- *     }
- *   MiInputKeyRemap.supportVolumeKeyRemap() = MiuiMultiDisplayTypeInfo.isFlipDevice()
- *     → 属性 1(伪装手机) → false → 音量键重映射完全禁用。
+ * ── 现象 ──
+ * 折叠(外屏)时音量键方向不跟随屏幕: 外屏 display0 `installOrientation=ROTATION_180`
+ * (物理上下与屏幕相反), 原生会在「折叠 + 竖屏(rotation==0)」时互换 VOLUME_UP(24)/VOLUME_DOWN(25),
+ * 横屏/展开时恢复物理方向。属性层(persist.sys.multi_display_type=1)后该功能整体失效。
  *
- *   flip 原生行为(属性 4): MiInputKeyRemap.handleVolumeKeyRemap(fold, rotation)
- *     - fold=true && rotation==0(折叠+外屏竖屏) → remapVolumeKey(): 互换 KEYCODE_VOLUME_UP(24)
- *       与 VOLUME_DOWN(25) → 音量键方向跟随屏幕(物理方向 vs 屏幕方向相反)
- *     - 非折叠 或 rotation!=0 → restoreVolumeKey() 恢复物理方向
- *   → "音量键功能跟随方向旋转而改变"(用户要恢复的功能)。
+ * ── 真根因: 该功能被三处 isFlipDevice 门依次挡死（国际版 miui-services 反编译 + 实机探针）──
+ * 1. `MiInputKeyRemap.supportVolumeKeyRemap()`(:131-133) = `MiuiMultiDisplayTypeInfo.isFlipDevice()`
+ *    → 属性1 → false。实测活探针: `dumpsys window` → `MiInputKeyRemap IsSupportVolumeKeyRemap=false`
+ *    （`dump()`:227 是**实时调用**该方法, 不是缓存字段 → 证明该门确实是 false）
+ *    ⚠️ refMD §44.6.2 记的「flip1 硬编码设备代号恒 true, 无需本 hook」**在国际版不成立**
+ *    —— 国际版与 flip2 同款实现, flip1 同样需要 hook。
+ * 2. `BaseMiuiPhoneWindowManager` `systemReadyInternal()`(:795) 里:
+ *      `if (IS_FOLD_DEVICE || IS_FLIP_DEVICE) registerDisplayFoldListener(mIDDisplayFoldListener);`
+ *    `IS_FOLD_DEVICE/IS_FLIP_DEVICE` 是 **static final**(:313 类加载期读 isFlipDevice) → 双双 false
+ *    → **fold 监听从未注册** → `$3.onDisplayFoldChanged()` 永不回调
+ *    → 其中的 `MiInputKeyRemap.notifyFoldStatus(folded)`(:342-343) 永不执行 → 永不 remap。
+ *    实机侧证: `dumpsys window` 里 policy `mIsFolded=false`, 而设备实际是 FOLDED
+ *    （DeviceState=CLOSED / `FoldController mDeviceState=FOLDED`）→ 折叠状态从未同步进 policy。
+ *    ⇒ **这是整条链真正缺失的一步**（`mMiInputKeyRemap` 在 :802 是无条件初始化的）。
+ * 3. `WindowManagerServiceImpl.isDeviceStateFolded()`(:3233) = `mFoldedDeviceStates` 含当前 state,
+ *    而该数组取 `R.array.config_halfFoldedDeviceStates`(:587) —— 该 framework 资源在**本机是空数组**
+ *    (`aapt2 dump resources framework-res.apk` → size=0) → 恒 false。
+ *    ⇒ v2 的 ⑥ 层用它当 fold 源, 会把正确的 fold=true 覆盖成 false → **永不 remap**。
+ *    （v3 起 ⑥ 改为以本 hook 观测到的真实 fold 为准）
  *
- * 2026-08-16 (#23 实测仍不生效) 结构分析:
- *   MiInputKeyRemap 构造(76 行): supportVolumeKeyRemap()==true 才 registerRotationWatcher
- *     (rotation 信号源) + initDeviceId; hook 生效时(早于 initInternal)构造即注册 watcher ✓
- *   BaseMiuiPhoneWindowManager.initInternal(789-796): registerDisplayFoldListener + getInstance
- *   KeyRemapStatusSynchronizeHandler: mFoldStatus 初始 false —— flip2 恒折叠且从不展开时
- *     onDisplayFoldChanged 不回调(带 true) → notifyFoldStatus 永不触发 → 永不 remap(实测根因)
+ * ── v3 修复（上游优先）──
+ * ① `supportVolumeKeyRemap() → true`（总门; 同时让构造期 registerRotationWatcher 生效）
+ * ⑨ **核心**: hook `BaseMiuiPhoneWindowManager.systemReadyInternal()` after → 原生门为假时反射调用
+ *    `registerDisplayFoldListener(mIDDisplayFoldListener)` 补上缺失的一步
+ *    → `DisplayFoldController.registerDisplayFoldListener`(:111-129) 会**立即回调**一次真实 fold
+ *    → `onDisplayFoldChanged` → `mFolded` 同步 + `notifyFoldStatus` → handler case1 → remap ✓
+ *    （顺带修复 policy `mFolded` 恒 false 的近邻问题: 背敲手势/近距离传感器/指纹的
+ *      notifyFoldStatus 都在同一回调里）
+ * ⑦⑧ 折叠切换信号（setDeviceFolded / FoldScreenListenerStubImpl）→ 主动驱动一次
+ * ⑥ 裁决层: fold 以本 hook 观测到的真实状态为准（不再用国际版恒 false 的 isDeviceStateFolded）
+ * ③④②⑤ 保留为状态同步/兜底; ⑤②不再硬编码 fold=true（展开态开机会错误 remap）
+ * ⑩ 旋转兜底: `DisplayRotation.updateRotationUnchecked` after 读 `mRotation`(displayId==0),
+ *    变化时用当前 fold 驱动一次（补上 MiInputKeyRemap 自带 RotationWatcher 未注册的场景）
  *
- * 2026-08-21 (#23 方案2, refMD §44.6.2) FlipRes 全链补全:
- *   789 行静态门实锤: BaseMiuiPhoneWindowManager.<clinit> 的 IS_FOLD_DEVICE/IS_FLIP_DEVICE 是
- *     static final(属性1→双双 false) → registerDisplayFoldListener 不注册 → onDisplayFoldChanged
- *     永不回调 → ③(notifyFoldStatus after)永不触发 → ②(getInstance after)是唯一 remap 路径。
- *   方案2 = 给唯一路径加双保险, 不改变全局 isFlipDevice 语义:
- *     ④ hook notifyWindowRotation(int) after → rotation 信号到来时同步 mWindowRotation +
- *       立即执行 handleVolumeKeyRemap(不等 handler 消息, 幂等安全)
- *     ⑤ hook 私有构造(after) → 直接 thisObject 初始化折叠态(与 ② 触发点同在 initInternal:796,
- *       但更早更直接, 不依赖 getInstance 的返回值/同步)
+ * ── 验证方法（本机 system_server 模块日志读不到, 用 MIUI 自己的输入日志）──
+ * `adb shell logcat -d -s MiuiInputKeyEventLog`（`MiuiInputLog` 用 Slog.w/i, 不受调试等级影响）:
+ *   `display changed,display=0 fold=true mIsFoldChanged=true` ← 原生 fold 回调触发(⑨ 生效)
+ *   `formKeyCode = 24 toKeyCode = 25` + `25 toKeyCode = 24`  ← remapVolumeKey() = 功能打开 ✓
+ *   `formKeyCode = 24 toKeyCode = 24` + `25 toKeyCode = 25`  ← restoreVolumeKey() = 横屏恢复 ✓
+ * 2026-09-30 实机结果: 折叠竖屏 remap ✓ / 折叠横屏(1392x1208 ROTATION_270) restore ✓。
  *
- * 2026-08-22 用户反馈(内外屏切换场景): "音量机制不生效, 估计走了内屏模式" —— flip2 实际
- *   内外屏频繁切换(非恒折叠)。v1 无条件 fold=true 在展开态(内屏)会错误 remap; 且折叠态
- *   (外屏)不生效 = handleVolumeKeyRemap 未被驱动(fold 回调链断)。
- *   FlipRes 实锤: DisplayFoldController(flip2-services/policy, 构造无条件注册
- *   DeviceStateManager.FoldStateListener[41-47]) → setDeviceFolded[67] 是折叠状态更新汇聚点,
- *   属性1下真实触发(物理 DeviceState 驱动, 与 isFlipDevice 无关) → mFolded[98] 真实;
- *   WindowManagerServiceImpl.isDeviceStateFolded[3005] = mFoldedDeviceStates 含 mCurrentDeviceState
- *   → 真实折叠状态可用。改造: ⑥ v2 fold=真实折叠状态(反射 WindowManagerServiceStub.get().
- *   isDeviceStateFolded()) → 折叠(外屏)remap / 展开(内屏)restore; ⑦ 新 hook
- *   DisplayFoldController.setDeviceFolded(boolean) after → 内外屏切换主动驱动
- *   handleVolumeKeyRemap(新 fold, 当前 rotation)(原生 fold 回调链被 789 静态门挡死)。
- *
- * 修复(七层):
- *   ① hook MiInputKeyRemap.supportVolumeKeyRemap()(静态) → true
- *     → BaseMiuiPhoneWindowManager 的 if 通过 + 构造里 watcher 注册(rotation 信号可用)
- *   ② hook MiInputKeyRemap.getInstance(Context) after → 主动初始化折叠态:
- *     设置 handler.mFoldStatus=true + 调 handleVolumeKeyRemap(true, 0) → 恒折叠设备立即 remap
- *   ③ hook MiInputKeyRemap.notifyFoldStatus(boolean) after → 折叠回调到来时同步字段 + 立即
- *     执行 handleVolumeKeyRemap(不等 handler 消息, 幂等安全)
- *   ④ hook MiInputKeyRemap.notifyWindowRotation(int) after → rotation 信号到来时同步字段 +
- *     立即执行(弥补 watcher 未注册/消息延迟的 rotation 盲区)
- *   ⑤ hook MiInputKeyRemap 私有构造(after) → thisObject 主动初始化(双保险, 触发点同 ②)
- *   ⑥(核心) hook MiInputKeyRemap.handleVolumeKeyRemap(boolean,int) before → fold = 真实折叠
- *     状态(反射 WindowManagerServiceStub.get().isDeviceStateFolded(), 物理 DeviceState 驱动),
- *     rotation 保留事件值 → 单点裁决: 折叠+竖屏 remap / 展开或横屏 restore, 内外屏切换自动
- *     跟随; 抹平 ②⑤ 硬编码 rotation=0 的竞态窗口, 幂等安全(与 ②③④⑤ 汇入同一入口, 无竞争)
- *   ⑦(2026-08-22 内外屏切换驱动) hook DisplayFoldController.setDeviceFolded(boolean) after →
- *     折叠↔展开切换时主动调 handleVolumeKeyRemap(新 fold, 当前 rotation) → 立即 remap/restore
- *     (原生 fold 回调链断, 无此驱动则切换后不更新; ②⑤ 记录的 mirkInstance 直接驱动)
- *
- * 进程: system_server。
- *   ⚠️ 2026-09-24 订正: 原文写「flip1 断路装不上, 无影响」——**该判断已作废**。
- *   同进程的 RotationFixHook 在 flip1 ruyi_global 上**实测生效**(refMD §43.15 四证据:
- *   Main.kt 无注释 / 属性缺省 true / 日志实时打 ⑦-E+④ / 行为侧 accelerometer_rotation=1)。
- *   按 refMD §41.2「无日志 ≠ 未注入」铁律, flip1 的 system_server 注入是**可靠的**,
- *   只是 onSystemServerStarting 日志可能不出。故本 hook 在 flip1 上也应生效, 待装机验证。
+ * 进程: system_server（LSPosed scope 已含 "system"）。
+ * 开关: persist.flipunlock.volume.keyremap（默认 true）
  */
 object VolumeKeyRemapFixHook {
 
-    /** 最近一次 MiInputKeyRemap 实例(②⑤ after 时记录), 供 ⑦ 折叠切换直接驱动 handleVolumeKeyRemap。 */
-    @Volatile
-    private var mirkInstance: Any? = null
+    private const val CLS_MIRK = "com.android.server.input.MiInputKeyRemap"
+    private const val CLS_POLICY = "com.android.server.policy.BaseMiuiPhoneWindowManager"
+    private const val CLS_FOLD_CTRL = "com.android.server.policy.DisplayFoldController"
+    private const val CLS_FOLD_STUB = "com.android.server.wm.FoldScreenListenerStubImpl"
+    private const val CLS_IDISPLAY_FOLD = "android.view.IDisplayFoldListener"
+    private const val CLS_DISPLAY_ROTATION = "com.android.server.wm.DisplayRotation"
+
+    /** 最近一次 MiInputKeyRemap 实例（供主动驱动 handleVolumeKeyRemap）。 */
+    @Volatile private var mirkInstance: Any? = null
+
+    /** BaseMiuiPhoneWindowManager 实例（读 mFolded / mContext）。 */
+    @Volatile private var policyInstance: Any? = null
+
+    /** 本 hook 观测到的真实折叠状态（来自 ⑨ 注册回调 / ⑦ / ⑧ / policy.mFolded）。 */
+    @Volatile private var foldState: Boolean? = null
+
+    /** 最近一次已知旋转（0/1/2/3; 1、3 = 横屏）。 */
+    @Volatile private var rotationState: Int = -1
 
     fun hook(param: SystemServerStartingParam) {
         if (!Config.volumeKeyRemap) return
-        log("VolumeKeyRemapFix: setting up")
-        safeHook("VolumeKeyRemapFix") {
-            // ① supportVolumeKeyRemap → true(336 门 + 构造注册 RotationWatcher)
-            runCatching {
-                val cls = param.classLoader.loadClass(
-                    "com.android.server.input.MiInputKeyRemap")
-                val m = cls.method("supportVolumeKeyRemap")
-                hook(m, replaceResult(true))
-                log("VolumeKeyRemapFix: ✓ supportVolumeKeyRemap → true (flip 音量键方向恢复)")
-            }.onFailure { log("VolumeKeyRemapFix ① supportVolumeKeyRemap failed: ${it.message}") }
+        log("VolumeKeyRemapFix: setting up (v3)")
 
-            // ⑤ 私有构造(after): 直接 thisObject 主动初始化折叠态(双保险, 触发点=initInternal:796)
-            //   ——不依赖 getInstance 返回值; 构造私有单例, 全生命周期仅触发一次, 幂等。
-            runCatching {
-                val cls = param.classLoader.loadClass(
-                    "com.android.server.input.MiInputKeyRemap")
-                val c = cls.getDeclaredConstructor(Context::class.java)
-                    .also { it.isAccessible = true }
-                hook(c, after { chain, result ->
-                    val inst = chain.thisObject ?: return@after result
-                    mirkInstance = inst
-                    initFoldState(inst)
-                    result
-                })
-                log("VolumeKeyRemapFix: ✓ hooked 构造 after [fold 主动初始化, 双保险]")
-            }.onFailure { log("VolumeKeyRemapFix ⑤ 构造 failed: ${it.message}") }
+        // ── ① 功能总门: supportVolumeKeyRemap() → true ──
+        runCatching {
+            val cls = loadClass(param, CLS_MIRK) ?: error("$CLS_MIRK 不可加载")
+            hook(cls.method("supportVolumeKeyRemap"), replaceResult(true))
+            log("VolumeKeyRemapFix: ✓ ① supportVolumeKeyRemap → true")
+        }.onFailure { log("VolumeKeyRemapFix ① failed: ${it.message}") }
 
-            // ② getInstance(Context) after: 主动初始化折叠态(flip2 恒折叠 → 立即 remap)
-            runCatching {
-                val cls = param.classLoader.loadClass(
-                    "com.android.server.input.MiInputKeyRemap")
-                val m = cls.method("getInstance", Context::class.java)
-                hook(m, after { chain, result ->
-                    val inst = result ?: return@after result
-                    mirkInstance = inst
-                    initFoldState(inst)
-                    result
-                })
-                log("VolumeKeyRemapFix: ✓ hooked getInstance after [fold 主动初始化]")
-            }.onFailure { log("VolumeKeyRemapFix ② getInstance failed: ${it.message}") }
-
-            // ③ notifyFoldStatus(boolean) after: 折叠回调时同步字段 + 立即执行(兜底)
-            runCatching {
-                val cls = param.classLoader.loadClass(
-                    "com.android.server.input.MiInputKeyRemap")
-                val m = cls.method("notifyFoldStatus", Boolean::class.javaPrimitiveType!!)
-                hook(m, after { chain, result ->
-                    val inst = chain.thisObject ?: return@after result
-                    val fold = chain.args[0] as? Boolean ?: return@after result
-                    setFoldState(inst, fold)
-                    result
-                })
-                log("VolumeKeyRemapFix: ✓ hooked notifyFoldStatus after [同步驱动]")
-            }.onFailure { log("VolumeKeyRemapFix ③ notifyFoldStatus failed: ${it.message}") }
-
-            // ④ notifyWindowRotation(int) after: rotation 信号到来时同步字段 + 立即执行
-            //   (原生只发 handler 消息 case2; 这里同步执行, 防消息延迟/丢失, 幂等安全)
-            runCatching {
-                val cls = param.classLoader.loadClass(
-                    "com.android.server.input.MiInputKeyRemap")
-                val m = cls.method("notifyWindowRotation", Int::class.javaPrimitiveType!!)
-                hook(m, after { chain, result ->
-                    val inst = chain.thisObject ?: return@after result
-                    val rotation = chain.args[0] as? Int ?: return@after result
-                    syncRotation(inst, rotation)
-                    result
-                })
-                log("VolumeKeyRemapFix: ✓ hooked notifyWindowRotation after [rotation 同步]")
-            }.onFailure { log("VolumeKeyRemapFix ④ notifyWindowRotation failed: ${it.message}") }
-
-            // ⑥ handleVolumeKeyRemap(boolean,int) before: 最终裁决层(2026-08-22 三 agent 深挖)
-            //   MiInputKeyRemap:176-183 是唯一裁决点:
-            //     mVolumeHasRemap && (!fold || rotation!=0) → restoreVolumeKey()(恢复物理方向)
-            //     !mVolumeHasRemap && fold && rotation==0   → remapVolumeKey()(互换 24↔25)
-            //   v1(31619bb)无条件 fold=true; v2(2026-08-22 用户反馈内外屏切换场景)改为
-            //   fold = **真实折叠状态**(反射 WindowManagerServiceStub.get().isDeviceStateFolded(),
-            //   基于 mCurrentDeviceState 物理 DeviceState, 属性1下真实) → 折叠(外屏)remap、
-            //   展开(内屏)restore, 内外屏切换自动跟随。rotation 保留事件值。
-            runCatching {
-                val cls = param.classLoader.loadClass(
-                    "com.android.server.input.MiInputKeyRemap")
-                val m = cls.method("handleVolumeKeyRemap",
-                    Boolean::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)
-                hook(m) { chain ->
-                    val rotation = chain.args[1] as? Int ?: 0
-                    val folded = realFoldState(param.classLoader)
-                    if (chain.args[0] != folded) {
-                        log("VolumeKeyRemapFix: ✓ handleVolumeKeyRemap fold ${chain.args[0]}→$folded rotation=$rotation")
-                    }
-                    chain.proceed(arrayOf<Any?>(folded, rotation))
+        // ── ⑨ 核心: 补注册 fold 监听（原生被 IS_FLIP_DEVICE 静态门挡死）──
+        runCatching {
+            val cls = loadClass(param, CLS_POLICY) ?: error("$CLS_POLICY 不可加载")
+            hook(cls.method("systemReadyInternal"), after { chain, result ->
+                val policy = chain.thisObject
+                policyInstance = policy
+                foldState = policyFold() ?: foldState
+                val nativeRegistered = runCatching {
+                    (cls.field("IS_FOLD_DEVICE").get(null) as? Boolean == true) ||
+                        (cls.field("IS_FLIP_DEVICE").get(null) as? Boolean == true)
+                }.getOrDefault(false)
+                if (!nativeRegistered) {
+                    runCatching {
+                        val listener = policy?.getField("mIDisplayFoldListener")
+                            ?: error("mIDisplayFoldListener 取不到")
+                        val reg = policy.javaClass.method(
+                            "registerDisplayFoldListener", Class.forName(CLS_IDISPLAY_FOLD))
+                        reg.invoke(policy, listener)
+                        log("VolumeKeyRemapFix: ✓ ⑨ 补注册 fold 监听(原生静态门挡死) → 原生链恢复")
+                    }.onFailure { log("VolumeKeyRemapFix ⑨ 注册失败: ${it.message}") }
+                } else {
+                    log("VolumeKeyRemapFix: ⑨ 原生已注册 fold 监听, 跳过")
                 }
-                log("VolumeKeyRemapFix: ✓ hooked handleVolumeKeyRemap before [fold=真实折叠状态, 单点裁决]")
-            }.onFailure { log("VolumeKeyRemapFix ⑥ handleVolumeKeyRemap failed: ${it.message}") }
+                result
+            })
+        }.onFailure { log("VolumeKeyRemapFix ⑨ failed: ${it.message}") }
 
-            // ⑦ DisplayFoldController.setDeviceFolded(boolean) after: 内外屏切换立即驱动 remap
-            //   DisplayFoldController(flip2-services/policy, 构造无条件注册 DeviceStateManager.
-            //   FoldStateListener[41-47]) → setDeviceFolded[67] 是折叠状态更新汇聚点, 属性1下
-            //   真实触发(物理 DeviceState 驱动, 与 isFlipDevice 无关) → mFolded 字段[98]真实。
-            //   hook after: 折叠↔展开切换时主动调 MiInputKeyRemap.handleVolumeKeyRemap(新 fold,
-            //   当前 rotation) → ⑥ 入口统一裁决 → 外屏 remap / 内屏 restore 即时生效
-            //   (原生 fold 回调链被 789 静态门挡死, 无此驱动则切换后不更新)。
-            runCatching {
-                val cls = param.classLoader.loadClass(
-                    "com.android.server.policy.DisplayFoldController")
-                val m = cls.method("setDeviceFolded", Boolean::class.javaPrimitiveType!!)
-                hook(m, after { chain, result ->
-                    val fold = chain.args[0] as? Boolean ?: return@after result
-                    triggerRemap(fold)
-                    result
-                })
-                log("VolumeKeyRemapFix: ✓ hooked DisplayFoldController.setDeviceFolded after [折叠切换驱动]")
-            }.onFailure { log("VolumeKeyRemapFix ⑦ setDeviceFolded failed: ${it.message}") }
+        // ── ⑦ DisplayFoldController.setDeviceFolded(boolean) after → 折叠切换驱动 ──
+        runCatching {
+            val cls = loadClass(param, CLS_FOLD_CTRL) ?: error("$CLS_FOLD_CTRL 不可加载")
+            hook(cls.method("setDeviceFolded", Boolean::class.javaPrimitiveType!!), after { chain, result ->
+                val fold = chain.args[0] as? Boolean ?: return@after result
+                drive(fold, currentRotation())
+                result
+            })
+            log("VolumeKeyRemapFix: ✓ ⑦ DisplayFoldController.setDeviceFolded after")
+        }.onFailure { log("VolumeKeyRemapFix ⑦ failed: ${it.message}") }
+
+        // ── ⑧ FoldScreenListenerStubImpl.onDeviceFoldStateChanged(boolean) after（MIUI stub 双保险）──
+        runCatching {
+            val cls = loadClass(param, CLS_FOLD_STUB) ?: error("$CLS_FOLD_STUB 不可加载")
+            hook(cls.method("onDeviceFoldStateChanged", Boolean::class.javaPrimitiveType!!), after { chain, result ->
+                val fold = chain.args[0] as? Boolean ?: return@after result
+                drive(fold, currentRotation())
+                result
+            })
+            log("VolumeKeyRemapFix: ✓ ⑧ FoldScreenListenerStubImpl.onDeviceFoldStateChanged after")
+        }.onFailure { log("VolumeKeyRemapFix ⑧ failed: ${it.message}") }
+
+        // ── ⑥ 裁决层: fold 以本 hook 观测到的真实状态为准 ──
+        runCatching {
+            val cls = loadClass(param, CLS_MIRK) ?: error("$CLS_MIRK 不可加载")
+            hook(cls.method("handleVolumeKeyRemap",
+                Boolean::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)) { chain ->
+                val argFold = chain.args[0] as? Boolean ?: false
+                val rotation = chain.args[1] as? Int ?: 0
+                val fold = foldState ?: argFold
+                if (fold != argFold) {
+                    log("VolumeKeyRemapFix: ⑥ fold $argFold → $fold (rotation=$rotation)")
+                }
+                chain.proceed(arrayOf<Any?>(fold, rotation))
+            }
+            log("VolumeKeyRemapFix: ✓ ⑥ handleVolumeKeyRemap 裁决(fold=真实折叠状态)")
+        }.onFailure { log("VolumeKeyRemapFix ⑥ failed: ${it.message}") }
+
+        // ── ③ notifyFoldStatus(boolean) after → 记录 + 立即驱动 ──
+        runCatching {
+            val cls = loadClass(param, CLS_MIRK) ?: error("$CLS_MIRK 不可加载")
+            hook(cls.method("notifyFoldStatus", Boolean::class.javaPrimitiveType!!), after { chain, result ->
+                val fold = chain.args[0] as? Boolean ?: return@after result
+                drive(fold, currentRotation())
+                result
+            })
+            log("VolumeKeyRemapFix: ✓ ③ notifyFoldStatus after")
+        }.onFailure { log("VolumeKeyRemapFix ③ failed: ${it.message}") }
+
+        // ── ④ notifyWindowRotation(int) after → 记录旋转 + 立即驱动 ──
+        runCatching {
+            val cls = loadClass(param, CLS_MIRK) ?: error("$CLS_MIRK 不可加载")
+            hook(cls.method("notifyWindowRotation", Int::class.javaPrimitiveType!!), after { chain, result ->
+                val rotation = chain.args[0] as? Int ?: return@after result
+                drive(foldState ?: policyFold() ?: return@after result, rotation)
+                result
+            })
+            log("VolumeKeyRemapFix: ✓ ④ notifyWindowRotation after")
+        }.onFailure { log("VolumeKeyRemapFix ④ failed: ${it.message}") }
+
+        // ── ② getInstance(Context) after → 捕获实例（不再硬编码 fold=true）──
+        runCatching {
+            val cls = loadClass(param, CLS_MIRK) ?: error("$CLS_MIRK 不可加载")
+            hook(cls.method("getInstance", Context::class.java), after { chain, result ->
+                if (result != null) {
+                    mirkInstance = result
+                    foldState = foldState ?: policyFold()
+                }
+                result
+            })
+            log("VolumeKeyRemapFix: ✓ ② getInstance after")
+        }.onFailure { log("VolumeKeyRemapFix ② failed: ${it.message}") }
+
+        // ── ⑤ 私有构造 after → 捕获实例（双保险, 不依赖 getInstance 返回值）──
+        runCatching {
+            val cls = loadClass(param, CLS_MIRK) ?: error("$CLS_MIRK 不可加载")
+            val ctor = cls.getDeclaredConstructor(Context::class.java).also { it.isAccessible = true }
+            hook(ctor, after { chain, result ->
+                chain.thisObject?.let {
+                    mirkInstance = it
+                    foldState = foldState ?: policyFold()
+                }
+                result
+            })
+            log("VolumeKeyRemapFix: ✓ ⑤ 构造 after")
+        }.onFailure { log("VolumeKeyRemapFix ⑤ failed: ${it.message}") }
+
+        // ── ⑩ 旋转兜底: DisplayRotation.updateRotationUnchecked after（displayId==0）──
+        runCatching {
+            val cls = loadClass(param, CLS_DISPLAY_ROTATION) ?: error("$CLS_DISPLAY_ROTATION 不可加载")
+            hook(cls.method("updateRotationUnchecked", Boolean::class.javaPrimitiveType!!), after { chain, result ->
+                val inst = chain.thisObject ?: return@after result
+                val displayId = runCatching {
+                    inst.getField("mDisplayContent")?.callMethod("getDisplayId") as? Int
+                }.getOrNull() ?: return@after result
+                if (displayId != 0) return@after result
+                val rotation = runCatching { inst.getField("mRotation") as? Int }.getOrNull()
+                    ?: return@after result
+                if (rotation == rotationState) return@after result
+                val fold = foldState ?: policyFold() ?: return@after result
+                drive(fold, rotation)
+                result
+            })
+            log("VolumeKeyRemapFix: ✓ ⑩ DisplayRotation.updateRotationUnchecked after(rotation 兜底)")
+        }.onFailure { log("VolumeKeyRemapFix ⑩ failed: ${it.message}") }
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────
+
+    /** 多 classloader 解析: system_server 里 MIUI jar 未必在 param.classLoader 可见路径上。 */
+    private fun loadClass(param: SystemServerStartingParam, name: String): Class<*>? {
+        val loaders = listOfNotNull(
+            param.classLoader,
+            runCatching { Thread.currentThread().contextClassLoader }.getOrNull(),
+            runCatching { ClassLoader.getSystemClassLoader() }.getOrNull(),
+        )
+        for (loader in loaders) {
+            runCatching { loader.loadClass(name) }.getOrNull()?.let { return it }
         }
+        return runCatching { Class.forName(name) }.getOrNull()
     }
 
-    /** 主动把折叠态置 true 并立即执行 handleVolumeKeyRemap(true, rotation=0) → 恒折叠设备开机即 remap。 */
-    private fun initFoldState(inst: Any) {
-        setFoldState(inst, true)
-        runCatching {
-            val m = inst.javaClass.method("handleVolumeKeyRemap",
-                Boolean::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)
-            m.invoke(inst, true, 0)
-            log("VolumeKeyRemapFix: ✓ 主动 handleVolumeKeyRemap(true,0) → 音量键 remap 生效")
-        }.onFailure { log("VolumeKeyRemapFix handleVolumeKeyRemap failed: ${it.message}") }
+    /** policy.mFolded（⑨ 修复后由 fold 回调驱动, 是可信源）。 */
+    private fun policyFold(): Boolean? =
+        runCatching { policyInstance?.getField("mFolded") as? Boolean }.getOrNull()
+
+    /** 当前显示旋转: 优先读 policy.mContext 的默认显示（= 外屏 display0, 与原生语义一致）。 */
+    private fun currentRotation(): Int {
+        val ctx = runCatching { policyInstance?.getField("mContext") as? Context }.getOrNull()
+        val rot = runCatching { ctx?.display?.rotation }.getOrNull()
+        return rot ?: rotationState
     }
 
-    /** 同步 handler 内部类字段 mFoldStatus(供后续 rotation 消息正确判断), 并立即执行一次。 */
-    private fun setFoldState(inst: Any, fold: Boolean) {
-        runCatching {
-            val handler = inst.javaClass.field("mHandler").get(inst) ?: return
-            handler.javaClass.field("mFoldStatus").set(handler, fold)
-            val m = inst.javaClass.method("handleVolumeKeyRemap",
-                Boolean::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)
-            val rotation = runCatching {
-                handler.javaClass.field("mWindowRotation").get(handler) as? Int
-            }.getOrNull() ?: 0
-            m.invoke(inst, fold, rotation)
-            log("VolumeKeyRemapFix: ✓ fold=$fold rotation=$rotation 同步 handleVolumeKeyRemap")
-        }.onFailure { log("VolumeKeyRemapFix setFoldState failed: ${it.message}") }
-    }
-
-    /** 同步 handler 内部类字段 mWindowRotation, 并立即按当前 fold 执行一次(rotation 信号即时生效)。 */
-    private fun syncRotation(inst: Any, rotation: Int) {
-        runCatching {
-            val handler = inst.javaClass.field("mHandler").get(inst) ?: return
-            handler.javaClass.field("mWindowRotation").set(handler, rotation)
-            val fold = runCatching {
-                handler.javaClass.field("mFoldStatus").get(handler) as? Boolean
-            }.getOrNull() ?: false
-            val m = inst.javaClass.method("handleVolumeKeyRemap",
-                Boolean::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)
-            m.invoke(inst, fold, rotation)
-            log("VolumeKeyRemapFix: ✓ rotation=$rotation fold=$fold 同步 handleVolumeKeyRemap")
-        }.onFailure { log("VolumeKeyRemapFix syncRotation failed: ${it.message}") }
-    }
-
-    /** 真实折叠状态: 反射 WindowManagerServiceStub.get().isDeviceStateFolded()。
-     *  (WindowManagerServiceImpl:3005 = mFoldedDeviceStates 含 mCurrentDeviceState, 物理
-     *  DeviceState 驱动, 属性1下真实; stub get() 是 package-private static, libxposed 可及)。
-     *  失败回退 true(恒折叠保守: 外屏优先 remap)。 */
-    private fun realFoldState(cl: ClassLoader): Boolean {
-        return runCatching {
-            val stubCls = cl.loadClass("com.android.server.wm.WindowManagerServiceStub")
-            val inst = stubCls.method("get").invoke(null) ?: return true
-            inst.javaClass.method("isDeviceStateFolded").invoke(inst) as? Boolean
-        }.getOrNull() ?: true
-    }
-
-    /** 折叠↔展开切换(⑦ hook)后主动驱动一次 handleVolumeKeyRemap: 用记录的实例 + 当前
-     *  handler.mWindowRotation, fold 由 ⑥ 入口再统一裁决(此处传的就是真实 fold)。 */
-    private fun triggerRemap(fold: Boolean) {
+    /** 记录状态并驱动 MiInputKeyRemap.handleVolumeKeyRemap(fold, rotation)。 */
+    private fun drive(fold: Boolean, rotation: Int) {
+        foldState = fold
+        if (rotation >= 0) rotationState = rotation
         val inst = mirkInstance ?: return
         runCatching {
-            val handler = inst.javaClass.field("mHandler").get(inst) ?: return
-            val rotation = runCatching {
-                handler.javaClass.field("mWindowRotation").get(handler) as? Int
-            }.getOrNull() ?: 0
             val m = inst.javaClass.method("handleVolumeKeyRemap",
                 Boolean::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)
             m.invoke(inst, fold, rotation)
-            log("VolumeKeyRemapFix: ✓ 折叠切换 fold=$fold rotation=$rotation 驱动 handleVolumeKeyRemap")
-        }.onFailure { log("VolumeKeyRemapFix triggerRemap failed: ${it.message}") }
+        }.onFailure { log("VolumeKeyRemapFix drive failed: ${it.message}") }
     }
 }

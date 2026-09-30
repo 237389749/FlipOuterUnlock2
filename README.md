@@ -24,7 +24,7 @@
 **Fullscreen & Rotation** (system_server)
 - Force fullscreen — disable MIUI flip size-compat letterbox (`AppFullscreen`)
 - Rotation unlock — `RotationFixHook` multi-layer (sensor enable + userRotation + `setOverrideOrientation`/`setOrientation` entry rewrite, portrait→USER_ROTATION)
-- Volume key rotation direction — `VolumeKeyRemapFixHook` (fold-state init + notify sync)
+- Volume key rotation direction — `VolumeKeyRemapFixHook` (restores the fold listener that the static `IS_FLIP_DEVICE` gate blocks + real fold/rotation drive; verified on ruyi_global)
 
 **Wallpaper** (system_server)
 - Wallpaper size clamping — `WallpaperFixHook` (flip1 right-side black / flip2 property-layer half-black background)
@@ -163,7 +163,7 @@ AGPL-3.0
 **全屏与旋转**（system_server）
 - 强制全屏 — 禁用 MIUI flip size-compat letterbox（`AppFullscreen`）
 - 旋转解锁 — `RotationFixHook` 多层（传感器启用 + userRotation + `setOverrideOrientation`/`setOrientation` 入口改写，portrait→USER_ROTATION）
-- 音量键方向跟随旋转 — `VolumeKeyRemapFixHook`（折叠态初始化 + notify 同步）
+- 音量键方向跟随旋转 — `VolumeKeyRemapFixHook`（补回被静态门 `IS_FLIP_DEVICE` 挡死的 fold 监听注册 + 真实折叠/旋转驱动；ruyi_global 实机验证 ✓）
 
 **壁纸**（system_server）
 - 壁纸尺寸钳制 — `WallpaperFixHook`（flip1 右侧黑 / flip2 属性层背景一半黑）
