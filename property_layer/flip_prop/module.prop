@@ -1,0 +1,6 @@
+id=flipunlock_prop
+name=FlipUnlock Property Layer
+version=3
+versionCode=3
+author=flip
+description=multi_display_type=1 (flip1/flip2 通用); CWB 保护按机型仅 flip1(2405); 跳过未引导设备的 provision 向导; flip2 全屏/服务端身份由 LSP hook 补
