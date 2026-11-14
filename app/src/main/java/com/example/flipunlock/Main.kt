@@ -12,6 +12,7 @@ import com.example.flipunlock.hook.system_server.AppFullscreen
 // import com.example.flipunlock.hook.system_server.AppRestriction     // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.system_server.DisplayStateHook
+import com.example.flipunlock.hook.system_server.DisplayKeepOnHook
 import com.example.flipunlock.hook.system_server.Flip1OuterCutoutHook
 import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
@@ -100,6 +101,7 @@ class Main : XposedModule() {
             Flip1OuterCutoutHook.hook(param)
         }
         DisplayStateHook.hook(param)         // DeviceState 钉死: 1b 恒布局 + getCurrentState(flip2→6 双屏/ flip1→0 外屏)
+        DisplayKeepOnHook.hook(param)        // [2026-11-15] 单外屏保命: 拦 display 0(幽灵内屏)掉电, 默认关(prop 打开)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
         // AppContinuity.hook(param)       // [OFF]
         // AodHook.hookFramework(param)    // [OFF]

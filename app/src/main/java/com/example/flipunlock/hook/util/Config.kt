@@ -95,6 +95,8 @@ object Config {
         "persist.flipunlock.rotation.fix",
         "persist.flipunlock.wallpaper.fix",
         "persist.flipunlock.display.state",
+        "persist.flipunlock.display.keepon",
+        "persist.flipunlock.display.keepon.block",
         "persist.flipunlock.ui.lockscreen",
         "persist.flipunlock.ui.widget",
         "persist.flipunlock.ui.controlcenter",
@@ -135,6 +137,11 @@ object Config {
     val wallpaperFix: Boolean get() = enabled && raw("persist.flipunlock.wallpaper.fix", true)
     // DisplayStateHook(DeviceState 钉死: 1b 恒布局 + getCurrentState)开关 — 高影响, 关可回退
     val displayState: Boolean get() = enabled && raw("persist.flipunlock.display.state", true)
+    // DisplayKeepOnHook(单外屏保命: 阻止 display 0 幽灵内屏掉电)开关
+    //   2026-11-15 新增: 拔内屏后框架一 disable display 0 就硬复位(refMD §10/§11)。
+    //   默认关; 打开后先只记日志(block=false), 确认路径再把 block 打开。
+    val displayKeepOn: Boolean get() = enabled && raw("persist.flipunlock.display.keepon", false)
+    val displayKeepOnBlock: Boolean get() = displayKeepOn && raw("persist.flipunlock.display.keepon.block", false)
     // CameraFixHook(相机进程属性→4, 修 flip 外屏相机倒置/黑边)开关
     val cameraFix: Boolean get() = enabled && raw("persist.flipunlock.camera.fix", true)
     // VolumeKeyRemapFixHook(音量键方向跟随旋转)开关
