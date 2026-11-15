@@ -1,0 +1,7 @@
+# Shell scripts must stay LF: a CRLF checkout breaks `customize.sh` / the KSU
+# property-layer zip ("syntax error: unexpected end of file"), because sh sees
+# a stray \r. Windows checkouts were shipping CRLF blobs -> broken zip.
+*.sh            text eol=lf
+*.prop          text eol=lf
+*.jks           binary
+*.keystore      binary
