@@ -45,19 +45,21 @@ object DisplayKeepOnHook {
                 m.isAccessible = true
                 n++
                 hook(m) { chain ->
+                    // 每次切换都实时读 prop：KSU 脚本可以做到「先用 block 挡住切换，切换完再放开」
+                    val liveBlock = Config.displayKeepOnBlock
                     val target = if (chain.args.isNotEmpty()) chain.args[0] as? Int else null
                     val phantom = isPhantom(chain.thisObject)
-                    if (phantom) {
-                        log("DisplayKeepOnHook: animateScreenStateChange target=$target phantom=true block=$blocking")
-                        if (blocking && target != null && target != STATE_ON) {
-                            log("DisplayKeepOnHook: BLOCKED off/doze transition, keep phantom on")
+                    if (phantom && target != null && target != STATE_ON) {
+                        if (liveBlock) {
+                            log("DisplayKeepOnHook: BLOCKED target=$target (phantom, keep on)")
                             return@hook null
                         }
+                        log("DisplayKeepOnHook: pass target=$target (block=false)")
                     }
                     chain.proceed()
                 }
             }
-            log("DisplayKeepOnHook: hooked animateScreenStateChange x$n")
+            log("DisplayKeepOnHook: hooked animateScreenStateChange x$n (live block prop)")
         }
     }
 
