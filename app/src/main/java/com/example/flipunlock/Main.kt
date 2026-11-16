@@ -122,8 +122,15 @@ class Main : XposedModule() {
         log("Main: onPackageReady pkg=${param.packageName} first=${param.isFirstPackage} proc=$proc")
         // Camera process: CutoutRemove.hookApp(camera) 相机 cutout 防御(flip1/flip2 都启用) [2026-08-15 恢复]
         // flip1: 防 NPE(用户实测无守护闪退); flip2: 配合 CameraFixHook(属性→4)flip 布局需非 null cutout
-        if (param.packageName == "com.android.camera") {
-            log("Main: loading CutoutRemove.hookApp for camera")
+        // camera: NPE defence (camera keeps a non-null cutout in its Optional chain)
+        // systemui: the MIUI AOD plugin runs inside SystemUI and calls
+        //   DisplayUtils.getCutoutPosition() -> display.getCutout() -> NPE when null
+        //   (flip2 single-outer-screen: com.miui.aod.DozeHost.create ->
+        //    DozeHost.dealWithFlipChange -> DisplayUtils.getCutoutPosition)
+        if (param.packageName == "com.android.camera" ||
+            param.packageName == "com.android.systemui"
+        ) {
+            log("Main: loading CutoutRemove.hookApp for ${param.packageName}")
             CutoutRemove.hookApp(param)
         }
         // App-side size-compat disable (complements AppFullscreen system_server hooks)
