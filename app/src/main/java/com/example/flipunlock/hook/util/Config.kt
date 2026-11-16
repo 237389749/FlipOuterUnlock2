@@ -134,7 +134,11 @@ object Config {
     //   param.classLoader.loadClass 必抛 ClassNotFoundException 被吞 = 静默空转。
     //   本开关只走新版本装载路径(loadJar/collectImpl 捕获 child ClassLoader), 老版本自然退回主 loader。
     //   双守护: flip2 + single_outer
-    val appIntercept: Boolean get() = enabled && raw("persist.flipunlock.app.intercept", true)
+    //   ★默认 **false**（2026-11-16 用户定案）: unlock2 走身份 1 → ContinuityPolicyService.sFolded
+    //     恒 false → isInterceptList() 直接返回 false → 拦截本来就不发生，这里再 hook 是无意义的。
+    //     真正需要它的是 **NoProp（属性 4，合盖时 sFolded=true）**，那边是常开。
+    //     留着这条通道只是为了「身份回到 4」时能一键打开。
+    val appIntercept: Boolean get() = enabled && raw("persist.flipunlock.app.intercept", false)
 
     // Gesture — keep together
     val gestureHome: Boolean get() = enabled && raw("persist.flipunlock.gesture.home", true)
