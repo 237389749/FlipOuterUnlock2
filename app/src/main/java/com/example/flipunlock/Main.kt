@@ -7,6 +7,7 @@ import com.example.flipunlock.hook.identity.CameraCutoutFixHook
 import com.example.flipunlock.hook.identity.TinyScreenFixHook
 import com.example.flipunlock.hook.ime.ImeNavBarFixHook
 import com.example.flipunlock.hook.miuihome.SFDeviceGestureHook
+import com.example.flipunlock.hook.miwallpaper.WallpaperIdentityFix
 import com.example.flipunlock.hook.settings.ImeBottomSupportHook
 import com.example.flipunlock.hook.system_server.AppFullscreen
 // import com.example.flipunlock.hook.system_server.AppRestriction     // [2026-08-15 注释] 最小集合实验
@@ -66,6 +67,7 @@ class Main : XposedModule() {
         ImeBottomSupportHook,           // 设置「全面屏键盘优化」入口: 国际版 IS_INTERNATIONAL_BUILD 硬隐藏解除(scope 需含 com.android.settings)
         ImeNavBarFixHook,               // 输入法底部 48dp 导航栏(⌄/🌐)→高度 0 (scope 需含输入法包)
         CameraFixHook,                  // 相机进程内 multi_display_type→4: 修 flip 外屏相机倒置+黑边(属性1副作用) [2026-08-15 恢复, flip1/2 通用]
+        WallpaperIdentityFix,           // 壁纸引擎进程内 multi_display_type→4 + which 全集: 修属性1下 miwallpaper 每10s NPE 崩溃环 [2026-11-16 新增, scope 需含 com.miui.miwallpaper]
         // CameraCutoutFixHook,         // 相机 NPE 防御 —— 由 CutoutRemove.hookApp(camera) 已覆盖, 不重复
         // DeviceIdentityHook,          // [OFF] 属性层模块已覆盖身份
         // ScreenTypeHook,              // [OFF]

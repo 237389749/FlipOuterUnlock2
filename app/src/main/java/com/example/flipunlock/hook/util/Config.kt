@@ -113,6 +113,7 @@ object Config {
         "persist.flipunlock.settings.imebottom",
         "persist.flipunlock.ui.launcherdensity",
         "persist.flipunlock.wallpaper.lock",
+        "persist.flipunlock.wallpaper.identity",
     )
 
     // Master switch
@@ -172,6 +173,11 @@ object Config {
     // LockWallpaperFixHook(锁屏壁纸被 ambient 隐藏 → 强制不隐藏)开关
     //   2026-09-24 新增: 修「锁屏没有壁纸 → 纯黑」(refMD §44.12)
     val lockWallpaperFix: Boolean get() = enabled && raw("persist.flipunlock.wallpaper.lock", true)
+    // WallpaperIdentityFix(miwallpaper 进程内身份还原 → 修壁纸引擎崩溃环)开关
+    //   2026-11-16 新增: 属性 1 + 单外屏下 MI_WALLPAPER_WHICH_ALL=3 只装载 which 1/2,
+    //   而 WallpaperServiceController 仍初始化 4/8 的引擎 → t() 返回 null → NPE, 每 10s 一次。
+    //   scope 必须勾选 com.miui.miwallpaper
+    val wallpaperIdentity: Boolean get() = enabled && raw("persist.flipunlock.wallpaper.identity", true)
     // ImeBottomSupportHook(设置「全面屏键盘优化」入口: 国际版硬隐藏解除)开关
     //   2026-09-24 新增: ruyi_global Settings 反编译 — isMiuiImeBottomSupport() 的
     //   !IS_INTERNATIONAL_BUILD 使整块分类被 removePreference。需 scope 勾选 com.android.settings
