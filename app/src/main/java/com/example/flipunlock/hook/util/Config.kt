@@ -144,9 +144,23 @@ object Config {
     val displayKeepOn: Boolean get() = enabled && raw("persist.flipunlock.display.keepon", false)
     val displayKeepOnBlock: Boolean get() = displayKeepOn && raw("persist.flipunlock.display.keepon.block", false)
     // Single outer screen mode: the inner panel has been removed.
-    // Auto-detected by the companion KSU module (no synaptics input device at boot).
-    // Only this mode needs the SystemUI null-cutout defence (MIUI AOD plugin NPE).
-    val singleOuter: Boolean get() = enabled && raw("persist.flipunlock.single_outer", false)
+    // Tri-state:
+    //   persist.flipunlock.single_outer = 1/0  -> explicit (the companion KSU module
+    //                                             writes it right after boot)
+    //   unset                                  -> auto-detect: the inner panel's
+    //                                             synaptics touch input device is gone
+    // Only this mode needs the SystemUI null-cutout defence (MIUI AOD plugin NPE),
+    // and only this mode should be switched to device_state=CLOSED.
+    val singleOuter: Boolean
+        get() {
+            if (!enabled) return false
+            when (readProp("persist.flipunlock.single_outer").trim().lowercase()) {
+                "1", "true" -> return true
+                "0", "false" -> return false
+            }
+            // unreadable sysfs -> assume single outer (the crash we avoid is worse)
+            return DeviceInfo.innerTouchPresent() != true
+        }
     // CameraFixHook(相机进程属性→4, 修 flip 外屏相机倒置/黑边)开关
     val cameraFix: Boolean get() = enabled && raw("persist.flipunlock.camera.fix", true)
     // VolumeKeyRemapFixHook(音量键方向跟随旋转)开关

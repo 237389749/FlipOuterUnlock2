@@ -24,6 +24,39 @@ object DeviceInfo {
     /** ro.product.model 原值(日志/诊断用) */
     val deviceModel: String get() = model
 
+    /**
+     * Inner panel touch (synaptics TCM) present?
+     *
+     * The inner panel's touch controller registers its own input device; when the
+     * panel is removed that device never appears. DRM connector status is useless
+     * here (the DT still reports "connected"), so key off /sys/class/input names.
+     *
+     * @return true/false when the scan succeeded, null when it could not be read.
+     */
+    fun innerTouchPresent(): Boolean? {
+        return try {
+            val dir = java.io.File("/sys/class/input")
+            val events = dir.listFiles { f -> f.name.startsWith("event") } ?: return null
+            var found = false
+            for (e in events) {
+                val n = try {
+                    java.io.File(e, "device/name").readText().trim()
+                } catch (t: Throwable) {
+                    continue
+                }
+                if (n.contains("synaptics", ignoreCase = true) ||
+                    n.contains("tcm", ignoreCase = true)
+                ) {
+                    found = true
+                    break
+                }
+            }
+            found
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
     private fun prop(key: String): String = runCatching {
         Class.forName("android.os.SystemProperties")
             .getDeclaredMethod("get", String::class.java, String::class.java)
