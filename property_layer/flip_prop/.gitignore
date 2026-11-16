@@ -1,0 +1,3 @@
+# 打包 v4 时临时复制进来的补丁内核模块（OS4.0.3 构建专属，源码在 out/ko/os403/）
+# CI 的 zip 刻意不含二进制，这里也不入库
+synaptics_tcm2_patched.ko
