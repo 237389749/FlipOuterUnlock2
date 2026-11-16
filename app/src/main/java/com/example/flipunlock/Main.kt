@@ -127,10 +127,19 @@ class Main : XposedModule() {
         //   DisplayUtils.getCutoutPosition() -> display.getCutout() -> NPE when null
         //   (flip2 single-outer-screen: com.miui.aod.DozeHost.create ->
         //    DozeHost.dealWithFlipChange -> DisplayUtils.getCutoutPosition)
-        if (param.packageName == "com.android.camera" ||
-            param.packageName == "com.android.systemui"
+        if (param.packageName == "com.android.camera") {
+            log("Main: loading CutoutRemove.hookApp for camera")
+            CutoutRemove.hookApp(param)
+        }
+        // Single outer screen (inner panel removed) on flip2: the MIUI AOD plugin runs
+        // inside SystemUI and calls DisplayUtils.getCutoutPosition() -> Display.getCutout()
+        // -> NPE when CutoutRemove zeroed the spec and the framework computed null.
+        // Guarded twice: flip2 only + persist.flipunlock.single_outer (default off,
+        // auto-detected by the companion KSU module from the missing synaptics input dev).
+        if (param.packageName == "com.android.systemui" &&
+            isFlip2Device() && Config.singleOuter
         ) {
-            log("Main: loading CutoutRemove.hookApp for ${param.packageName}")
+            log("Main: loading CutoutRemove.hookApp for systemui (single-outer mode)")
             CutoutRemove.hookApp(param)
         }
         // App-side size-compat disable (complements AppFullscreen system_server hooks)

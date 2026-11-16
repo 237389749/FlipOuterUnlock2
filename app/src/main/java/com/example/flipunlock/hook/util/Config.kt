@@ -97,6 +97,7 @@ object Config {
         "persist.flipunlock.display.state",
         "persist.flipunlock.display.keepon",
         "persist.flipunlock.display.keepon.block",
+        "persist.flipunlock.single_outer",
         "persist.flipunlock.ui.lockscreen",
         "persist.flipunlock.ui.widget",
         "persist.flipunlock.ui.controlcenter",
@@ -142,6 +143,10 @@ object Config {
     //   默认关; 打开后先只记日志(block=false), 确认路径再把 block 打开。
     val displayKeepOn: Boolean get() = enabled && raw("persist.flipunlock.display.keepon", false)
     val displayKeepOnBlock: Boolean get() = displayKeepOn && raw("persist.flipunlock.display.keepon.block", false)
+    // Single outer screen mode: the inner panel has been removed.
+    // Auto-detected by the companion KSU module (no synaptics input device at boot).
+    // Only this mode needs the SystemUI null-cutout defence (MIUI AOD plugin NPE).
+    val singleOuter: Boolean get() = enabled && raw("persist.flipunlock.single_outer", false)
     // CameraFixHook(相机进程属性→4, 修 flip 外屏相机倒置/黑边)开关
     val cameraFix: Boolean get() = enabled && raw("persist.flipunlock.camera.fix", true)
     // VolumeKeyRemapFixHook(音量键方向跟随旋转)开关
