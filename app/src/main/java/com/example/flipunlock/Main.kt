@@ -11,6 +11,7 @@ import com.example.flipunlock.hook.miwallpaper.WallpaperIdentityFix
 import com.example.flipunlock.hook.settings.ImeBottomSupportHook
 import com.example.flipunlock.hook.system_server.AppFullscreen
 // import com.example.flipunlock.hook.system_server.AppRestriction     // [2026-08-15 注释] 最小集合实验
+import com.example.flipunlock.hook.system_server.AppInterceptUnlock
 import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.system_server.DisplayStateHook
 import com.example.flipunlock.hook.system_server.DisplayKeepOnHook
@@ -88,6 +89,10 @@ class Main : XposedModule() {
         // (InterceptActivityController.isInterceptListUnCheckFold, 独立于身份, 云端 INTERCEPT_LIST)。
         // flip2 system_server 注入正常(§34.7)可生效; flip1 断路(§43.6.1)装不上, 无影响。
         // AppRestriction.hook(param)       // [2026-08-15 注释] 最小集合实验
+        // [2026-11-16] 新版本通道: 4.0.3 起 InterceptActivityController 由 MiuiStubRegistry.loadJar
+        // 从 miui-appcompat.appcontinuity.jar 动态加载(不在主 classpath), 老 hook 拿不到类。
+        // 本 hook 走 loadJar/collectImpl 捕获 child ClassLoader; 双守护 flip2 + single_outer。
+        AppInterceptUnlock.hook(param)
         // CutoutRemove: flip2 恢复(清零 cutout 数据→挖孔消除); flip1 属性层通杀不需要(2026-08-14 用户确认)
         if (isFlip2Device()) {
             CutoutRemove.hook(param)         // [2026-08-15 恢复] flip2 去挖孔

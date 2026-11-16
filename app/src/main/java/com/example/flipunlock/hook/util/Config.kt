@@ -114,6 +114,7 @@ object Config {
         "persist.flipunlock.ui.launcherdensity",
         "persist.flipunlock.wallpaper.lock",
         "persist.flipunlock.wallpaper.identity",
+        "persist.flipunlock.app.intercept",
     )
 
     // Master switch
@@ -127,6 +128,13 @@ object Config {
 
     // App
     val appContinuity: Boolean get() = enabled && raw("persist.flipunlock.app.continuity", true)
+    // AppInterceptUnlock(外屏启动拦截解除, **OS4.0.3+ 新版本专用通道**)开关
+    //   2026-11-16 新增: 4.0.3 把 InterceptActivityController 改成由 MiuiStubRegistry.loadJar
+    //   从 miui-appcompat.appcontinuity.jar 动态加载(不在主 classpath) → 老的
+    //   param.classLoader.loadClass 必抛 ClassNotFoundException 被吞 = 静默空转。
+    //   本开关只走新版本装载路径(loadJar/collectImpl 捕获 child ClassLoader), 老版本自然退回主 loader。
+    //   双守护: flip2 + single_outer
+    val appIntercept: Boolean get() = enabled && raw("persist.flipunlock.app.intercept", true)
 
     // Gesture — keep together
     val gestureHome: Boolean get() = enabled && raw("persist.flipunlock.gesture.home", true)
