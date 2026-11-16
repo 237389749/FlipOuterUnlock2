@@ -2,15 +2,19 @@
 # flip_prop / service.sh  (companion module for the FlipOuterUnlock LSPosed module)
 #
 #   1. skip the setup wizard if the device was just factory-reset
-#   2. if the LSPosed module is not installed -> restore identity 4 (native flip)
+#   2. if the LSPosed module is not installed -> restore identity 4 (native flip),
+#      otherwise property 1 alone makes SystemUI crash-loop
 #   3. crash self-heal: 3 SystemUI crashes within ~1 min -> restore identity 4
-#   4. wait for boot_completed
-#   5. clear the outer-screen app launch restriction (allowstart for every package)
-#   6. detect single-outer-screen mode -> persist.flipunlock.single_outer
-#   7. only in that mode: force device_state=CLOSED + pin the rotation
+#   4. detect single-outer-screen mode (inner panel removed) -> persist.flipunlock.single_outer
+#   5. only in that mode: force device_state=CLOSED so the outer panel becomes
+#      logical display 0, and pin the rotation
+#
+# NOTE: the outer-screen app launch restriction ("open it on the inner screen") is
+# NOT handled here on purpose. It disappears once identity is 1 and the LSPosed
+# module is active, because the framework no longer treats the device as a flip.
 #
 # Switches:
-#   persist.flipunlock.single_outer        (written in step 6; 1 = inner panel removed)
+#   persist.flipunlock.single_outer        (written here; 1 = inner panel removed)
 #   persist.flipunlock.outer.force_closed  (default 1; 0 = let DisplayStateHook do it)
 MODDIR=${0%/*}
 LOG=/data/local/tmp/flip_prop_service.log
@@ -51,29 +55,15 @@ fi
     done
 ) &
 
-# ---- 4. wait for a booted system --------------------------------------------
-i=0
-while [ "$(getprop sys.boot_completed)" != "1" ] && [ "$i" -lt 150 ]; do
-    i=$((i + 1))
-    sleep 2
-done
-echo "boot_completed after $((i * 2))s"
-
-# ---- 5. clear outer-screen app launch restriction ----------------------------
-# The allowstart list lives in system_server memory (ContinuityPolicyService
-# LOCAL_POLICY_BY_COMMAND); it short-circuits
-# InterceptActivityController.isInterceptListUnCheckFold() at the highest
-# priority, so "open it on the inner screen" never triggers. Re-apply every boot.
-PKGS=$(pm list packages 2>/dev/null | sed 's/^package://' | tr '\n' ':' | sed 's/:$//')
-if [ -n "$PKGS" ]; then
-    OUT=$(dumpsys window -setForceDisplayCompatMode "$PKGS" allowstart 2>&1)
-    echo "allowstart applied=$(echo "$OUT" | grep -c 'applied policy:allowstart') pkgs=$(echo "$PKGS" | tr ':' '\n' | wc -l)"
-else
-    echo "allowstart: no packages?!"
-fi
-
-# ---- 6./7. single outer screen ----------------------------------------------
+# ---- 4./5. single outer screen ----------------------------------------------
 if [ "$(getprop ro.product.device)" = "bixi" ]; then
+    i=0
+    while [ "$(getprop sys.boot_completed)" != "1" ] && [ "$i" -lt 150 ]; do
+        i=$((i + 1))
+        sleep 2
+    done
+    echo "boot_completed after $((i * 2))s"
+
     # The inner panel's touch controller (synaptics) registers its own input device.
     # Panel removed -> that device never appears. DRM connector status is useless
     # here (the DT still reports "connected"), so key off the input device name.
