@@ -1,42 +1,38 @@
 #!/system/bin/sh
-# FlipUnlock 属性层 (flip1/flip2 通用) — 跳过开机引导(provision)保护
-# 2026-08-14: 若设备未引导(device_provisioned≠1, 如恢复出厂/换机后首次开机),
-# 标记跳过引导向导, 直接进桌面(测试/二手机场景; 已引导设备不受影响)。
-# refMD Gesture_Widget_Overlay §14: com.android.provision 是临时 HOME(priority 1000),
-# DEVICE_PROVISIONED=1 后不再作为 HOME, 不会出现引导向导。
-# 用 settings 命令(service 阶段可用), 比直接改 settings_*.xml 安全。
+# flip_prop / service.sh  (companion module for the FlipOuterUnlock LSPosed module)
+#
+#   1. skip the setup wizard if the device was just factory-reset
+#   2. if the LSPosed module is not installed -> restore identity 4 (native flip),
+#      otherwise property 1 alone makes SystemUI crash-loop
+#   3. crash self-heal: 3 SystemUI crashes within ~1 min -> restore identity 4
+#   4. flip2 single-outer-screen: once the system is up, force device_state=CLOSED
+#      so the outer panel becomes logical display 0, and pin the rotation
+#      (property 1 exposes the outer panel as a presentation display -> ROTATION_90)
+#
+# Switch (4): persist.flipunlock.outer.force_closed  (default 1, set 0 to keep the
+# framework-driven behaviour from DisplayStateHook instead)
+MODDIR=${0%/*}
+LOG=/data/local/tmp/flip_prop_service.log
+exec >> $LOG 2>&1
+echo "=== $(date) flip_prop service start ==="
 
+# ---- 1. provision skip -------------------------------------------------------
 PROVISIONED=$(settings get global device_provisioned 2>/dev/null)
 if [ "$PROVISIONED" != "1" ]; then
     settings put global device_provisioned 1
     settings put secure user_setup_complete 1
-    # 状态记录(可选排查): 出现 "flip_prop: provision skipped" 说明本次标记了跳过引导
-    log -t flip_prop "provision skipped (device_provisioned was '$PROVISIONED')"
+    echo "provision skipped (was '$PROVISIONED')"
+    log -t flip_prop "provision skipped"
 fi
 
-# ── 预防: LSP 未装则不伪装(方案A, 2026-08-16) ────────────────────────
-# 单独装 KSU(属性1)无 LSP = SystemUI TinyKeyguardPanel NPE 崩溃环(§38,
-#   isFlipDevice→false 禁止作用于 SystemUI, 需 LSP DeviceIdentityHook 身份排除)。
-# 用文件系统 glob 检查 LSP APK(com.example.flipunlock)是否安装 —— 不依赖 pm
-#   服务(service 早期 pm 可能未就绪, 误判会错误还原属性), /data/app 是 DE 区已挂载。
-# 未装 → 属性还原 4(不伪装), 从根上避免崩溃。
-# 局限: LSP 装了但未启用/scope 不全防不住 → 由下面方案B(崩溃自愈)兜底。
+# ---- 2. LSP guard ------------------------------------------------------------
 if ! ls /data/app/*/com.example.flipunlock-*/base.apk >/dev/null 2>&1; then
     setprop persist.sys.multi_display_type 4
-    log -t flip_prop "LSP 模块未装, 跳过伪装(属性还原 4, 防 SystemUI 崩溃环)"
+    echo "LSPosed module not installed -> identity restored to 4"
+    log -t flip_prop "LSP module missing, identity -> 4"
 fi
 
-# ── SystemUI 崩溃环热自愈(2026-08-16, 方案B) ─────────────────────────
-# 场景: 单独装 KSU 属性模块(属性1=伪装手机)而无 LSP 模块时, SystemUI 的
-#   TinyKeyguardPanelViewController 构造 NPE → 崩溃环(refMD FoldState §38:
-#   isFlipDevice→false 禁止作用于 SystemUI, 需 LSP DeviceIdentityHook 身份排除)。
-# 自愈: 检测到崩溃环 → 属性还原 4(flip 原生) → killall SystemUI 让 AM 重启,
-#   新进程读到属性 4 → isFlipDevice=true → 不再崩, 无需整机重启。
-# 检测: 每 2s 抓一次 logcat crash buffer, 统计 **任何 SystemUI 崩溃**(进程行
-#   "Process: com.android.systemui"), 累计 >= 3 次触发; 上限 30 次(约 1 分钟)。
-#   不限定具体异常类(用户决定: SystemUI 反复崩溃即回退, 属性 4 是安全态)。
-# 形态: 后台子 shell 不阻塞 boot; 仅属性=1 时生效(属性 4 直接跳过)。
-# ⚠️ 局限: 模块被删/禁用时脚本不跑, 救不了"删模块+属性残留1"场景(靠一键联动卸载命令)。
+# ---- 3. SystemUI crash self-heal --------------------------------------------
 (
     i=0
     while [ "$i" -lt 30 ]; do
@@ -44,7 +40,8 @@ fi
         N=$(logcat -d -b crash 2>/dev/null | grep -c "Process: com.android.systemui")
         if [ "$N" -ge 3 ]; then
             setprop persist.sys.multi_display_type 4
-            log -t flip_prop "SystemUI 崩溃环自愈: SystemUI crash x$N → 属性还原 4"
+            log -t flip_prop "SystemUI crash loop x$N -> identity 4"
+            echo "self-heal: SystemUI crash x$N -> identity 4"
             killall com.android.systemui 2>/dev/null
             break
         fi
@@ -52,3 +49,39 @@ fi
         sleep 2
     done
 ) &
+
+# ---- 4. flip2 single outer screen -------------------------------------------
+if [ "$(getprop ro.product.device)" = "bixi" ]; then
+    i=0
+    while [ "$(getprop sys.boot_completed)" != "1" ] && [ "$i" -lt 150 ]; do
+        i=$((i + 1))
+        sleep 2
+    done
+    echo "boot_completed after $((i * 2))s"
+
+    if [ "$(getprop persist.flipunlock.outer.force_closed 1)" = "1" ]; then
+        # let the display stack settle (the touch patch makes screen-off safe now)
+        while :; do
+            up=$(cut -d. -f1 /proc/uptime)
+            [ "$up" -ge 60 ] && break
+            sleep 2
+        done
+        echo "switch CLOSED at uptime=$(cut -d. -f1 /proc/uptime) state_now=$(cmd device_state state 2>&1 | head -1)"
+        cmd device_state state 0
+        sleep 3
+        echo "state_after=$(cmd device_state state 2>&1 | head -1)"
+
+        # property 1: outer panel is a presentation display -> WMS gives ROTATION_90
+        if [ "$(getprop persist.sys.multi_display_type)" = "1" ]; then
+            settings put system accelerometer_rotation 0
+            settings put system user_rotation 0
+            wm user-rotation lock 0
+            wm fixed-to-user-rotation enabled
+            echo "rotation pinned: $(dumpsys window 2>/dev/null | grep -m1 'mRotation=')"
+        fi
+        echo "display0=$(dumpsys display 2>/dev/null | grep -A1 'mDisplayId=0$' | tr '\n' ' ')"
+        echo "oops=$(dmesg | grep -c 'Internal error')"
+    fi
+fi
+
+echo "=== flip_prop service done ==="

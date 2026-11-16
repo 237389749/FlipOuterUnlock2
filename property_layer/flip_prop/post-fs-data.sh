@@ -1,29 +1,70 @@
 #!/system/bin/sh
-# FlipUnlock 属性层 (flip1/flip2 通用, 2026-08-14 加机型判断)
-# 核心: flip(4)->普通手机(1), 静态常量全变 (MiuiMultiDisplayTypeInfo.sDeviceType 等类加载时读到)
-resetprop persist.sys.multi_display_type 1
+# flip_prop / post-fs-data  (companion module for the FlipOuterUnlock LSPosed module)
+#
+# What it does, in order:
+#   1. panic_on_oops=0            safety net, so a kernel oops does not hard-reset
+#   2. multi_display_type 4 -> 1  flip identity -> "normal phone" (the LSPosed module
+#                                 depends on it; without the LSP module service.sh
+#                                 reverts this)
+#   3. flip1 CWB guard            property 1 on flip1 trips a composer CWB crash
+#   4. flip2 touch patch          inner panel removed -> goodix_ts_resume calls
+#                                 synaptics get_capfold_information -> NULL -> oops.
+#                                 We swap in a synaptics_tcm2.ko whose
+#                                 get_capfold_information returns -ENODEV at entry.
+#
+# The touch patch is build-locked: EXPECTED_SHA must match the stock module of the
+# running ROM. After an OTA the hash changes and the swap is skipped on purpose
+# (touch keeps working with the stock driver); re-run out/tools/repatch_touch.py.
+MODDIR=${0%/*}
+LOG=/data/local/tmp/flip_prop_postfs.log
+exec >> $LOG 2>&1
+echo "=== $(date) flip_prop post-fs-data ==="
 
-# CWB 保护 (高通 display): 属性 1 触发 composer CWB 崩溃
-# ValidateCwbConfigInfo null deref -> ConfigureCwbForIdleFallback -> 黑屏/热重启
-# (refMD CWB_Inject_Breakage.md: 崩溃点 ldr w21,[x1,#0x24] = LayerBufferFormat 引用 null)
-# ⚠️ 2026-08-14: 仅 flip1(2405CPX3DC)需要——flip2(2505APX7BC)固件不同, 未实测崩溃,
-#    且 flip2 属性1 下 CWB 保护可能不必要(用户实测锁屏/渲染异常与此无关)。
-#    按机型启用, 一个模块通吃两台, 不再需要 flip2_prop。
-# disable_cwb_call=1 开机生效; enable_allow_idle_fallback 可能被 HAL 覆盖回 1, 前者足够
+# ---- 1. safety net -----------------------------------------------------------
+echo 0 > /proc/sys/kernel/panic_on_oops 2>/dev/null
+echo "panic_on_oops=$(cat /proc/sys/kernel/panic_on_oops)"
+
+# ---- 2. identity -------------------------------------------------------------
+resetprop persist.sys.multi_display_type 1
+echo "multi_display_type=$(getprop persist.sys.multi_display_type) device=$(getprop ro.product.device)"
+
+# ---- 3. flip1 CWB guard ------------------------------------------------------
 case "$(getprop ro.product.model)" in
-  2405*)  # Xiaomi MIX Flip (flip1/ruyi)
+  2405*)
     resetprop -n vendor.display.disable_cwb_call 1
     resetprop -n vendor.display.enable_allow_idle_fallback 0
+    echo "flip1: CWB guard applied"
     ;;
 esac
 
-# 部署: 目录复制到 /data/adb/modules/ 后重启 (建议目录名 flip_prop, 两台通用);
-#       卸载: 删目录重启; flip2 上先删旧的 flip2_prop 再装本模块
-#
-# ⚠️ 开关无效说明 (HANDOFF #21, 2026-08-16):
-#   persist.sys.multi_display_type 已被本脚本持久化到 /data/property/persistent_properties,
-#   KSU/Magisk 里 disable 模块只是跳过脚本执行, persist 残留 → 重启后属性仍=1。
-#   要恢复 flip 原生(属性 4), 任选其一:
-#   a) 手动恢复命令(最快, 持久化写一次即可, 无需卸载模块):
-#        su -c 'resetprop persist.sys.multi_display_type 4'
-#   b) 卸载模块(会执行 uninstall.sh, 自动写回 4)
+# ---- 4. flip2 touch patch ----------------------------------------------------
+if [ "$(getprop ro.product.device)" = "bixi" ]; then
+    STOCK=/vendor_dlkm/lib/modules/synaptics_tcm2.ko
+    EXPECTED_SHA=04ae4874ea95a548d7a589304bc30f22f30d17cbd017e9fe7d32763f6aac7cfe
+    KO=$MODDIR/synaptics_tcm2_patched.ko
+
+    if [ ! -f "$KO" ]; then
+        echo "touch patch: $KO missing, skip"
+    else
+        SHA=$(sha256sum "$STOCK" 2>/dev/null | cut -d' ' -f1)
+        echo "touch patch: stock sha256=$SHA"
+        if [ "$SHA" != "$EXPECTED_SHA" ]; then
+            echo "touch patch: !! stock module changed (OTA?) -> skip, touch stays stock"
+            log -t flip_prop "synaptics module changed, touch patch SKIPPED"
+        else
+            echo "touch patch: before goodix=$(cat /sys/module/goodix_core/refcnt 2>/dev/null) synaptics=$(cat /sys/module/synaptics_tcm2/refcnt 2>/dev/null)"
+            timeout 10 rmmod goodix_core
+            echo "touch patch: rmmod goodix rc=$?"
+            timeout 10 rmmod synaptics_tcm2
+            echo "touch patch: rmmod synaptics rc=$?"
+            sleep 1
+            timeout 10 insmod "$KO"
+            echo "touch patch: insmod patched rc=$?"
+            sleep 1
+            timeout 10 insmod /vendor_dlkm/lib/modules/goodix_core.ko
+            echo "touch patch: insmod goodix rc=$?"
+        fi
+    fi
+fi
+
+echo "=== flip_prop post-fs-data done ==="

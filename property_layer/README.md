@@ -1,56 +1,66 @@
-# property_layer/ — KSU/Magisk 属性层模块
+# property_layer/ — KSU/Magisk 配套模块（属性层 + flip2 触摸补丁 + 单外屏自动化）
 
 ## 内容
 
 | 路径 | 说明 |
 |---|---|
 | `flip_prop/` | **源码（唯一真源，git 跟踪）**：`module.prop` + `customize.sh` + `post-fs-data.sh` + `service.sh` + `uninstall.sh` |
+| `flip_prop/synaptics_tcm2_patched.ko` | **不入库**（937 KB 二进制）。打包前从 `out/ko/os403/synaptics_tcm2_patched.ko` 拷进来，否则 flip2 的触摸补丁不生效（`customize.sh` 会提示） |
 
-> ⚠️ **产物（`*.zip`）不入库**：安装包请自行打包（下一节），或用 CI 在 **tag** 上产出的 Release 资产
-> `flipunlock_prop.zip`（见「发版时 CI 会自动打包」）。仓库里只留可复现的源码。
+## 它到底做了什么
+
+`post-fs-data.sh`（开机最早阶段，root）：
+
+1. `panic_on_oops=0` —— 兜底，任何 oops 不直接硬复位；
+2. `resetprop persist.sys.multi_display_type 1` —— 身份 4（flip 原生）→ 1（普通手机），**LSPosed 模块的整套 hook 依赖这个**；
+3. flip1（`ro.product.model=2405*`）设 CWB 保护属性；
+4. **flip2（`ro.product.device=bixi`）换 `synaptics_tcm2.ko`**：拔掉内屏后 `goodix_ts_resume` 会调
+   `get_capfold_information`，内屏不在 → 全局上下文 NULL → oops → 硬复位。补丁把函数入口改成
+   `mov w0,#-19; ret`，调用方只记一条 `get capfold information failed`，随后正常 resume。
+   **带哈希闸门**：`EXPECTED_SHA` 必须匹配当前 ROM 的 stock 模块；OTA 后不匹配就**跳过换模块**
+   （触摸保持原厂可用），日志写 `/data/local/tmp/flip_prop_postfs.log`，
+   重打用 `out/tools/repatch_touch.py`。
+
+`service.sh`（`boot_completed` 之后）：
+
+1. 出厂重置时跳过引导向导（`device_provisioned` / `user_setup_complete`）；
+2. **LSPosed 模块没装 → 身份还原 4**（光装属性层会让 SystemUI 崩溃环）；
+3. SystemUI 崩溃自愈：1 分钟内崩 3 次 → 身份还原 4 + 重启 SystemUI；
+4. **flip2 单外屏**：等 `uptime ≥ 60` → `cmd device_state state 0`（外屏变 logical display 0）
+   → 属性 1 时再 `wm fixed-to-user-rotation enabled` 钉竖屏。
+   开关：`persist.flipunlock.outer.force_closed`（默认 1；设 0 表示改由 LSPosed 的 `DisplayStateHook` 负责）。
+
+`uninstall.sh`：`multi_display_type` 写回 4（persist 属性不会自己消失），清掉 CWB 运行时属性。
 
 ## 重新打包
 
 ```powershell
-# 在仓库根目录执行（zip 里必须是文件在根，不能嵌套 flip_prop/ 目录）
+# 1) 把补丁模块拷进包里（不入库，必须手动放）
+Copy-Item ..\..\out\ko\os403\synaptics_tcm2_patched.ko property_layer\flip_prop\ -Force
+
+# 2) 打包（zip 里必须是文件在根，不能嵌套 flip_prop/ 目录）
 Compress-Archive -Path property_layer\flip_prop\* -DestinationPath flip_prop.zip -Force
-# 校验：列出的应是 5 个文件、无目录前缀
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::OpenRead((Resolve-Path flip_prop.zip)).Entries |
-  Select-Object FullName, Length
 ```
 
-## 发版时 CI 会自动打包（推荐路径）
-
-`.github/workflows/ci_build.yml` 里两个只在 **tag** 上执行的步骤：
-
-```yaml
-- name: Package property-layer module (zip, Magisk/KSU flashable)
-  if: github.ref_type == 'tag'
-  run: (cd property_layer/flip_prop && zip -r ../../flipunlock_prop.zip .)
-
-- name: Create Release
-  if: github.ref_type == 'tag'
-  # 资产 = APK + flipunlock_prop.zip
-```
-
-⇒ **打 tag（如 `v3.1`）会同时产出「带新 hook 的 APK + 该 tag 对应的 prop zip」Release**，
-所以仓库里不需要再提交一份 zip。
+> ⚠️ Windows 上 `core.autocrlf` 会把 `.sh` checkout 成 CRLF，打出来的 zip 在设备上会
+> `syntax error`。仓库根已有 `.gitattributes`（`*.sh text eol=lf`）；打包前仍建议确认 zip 里是 LF。
 
 ## 安装（设备端）
 
 ```bash
-# 先自行打包（见上）或直接用 Release 里的 flipunlock_prop.zip
 adb push flip_prop.zip /data/local/tmp/
-MSYS_NO_PATHCONV=1 adb shell su -c '/data/adb/ksud module install /data/local/tmp/flip_prop.zip'
-# 或 KSU/Magisk Manager → 从本地安装 → 选这个 zip
-# ⚠️ zip 的 module.prop 必须在压缩包根目录，不能嵌套 flip_prop/ 文件夹
+adb shell /data/adb/ksud module install /data/local/tmp/flip_prop.zip
+adb reboot
 ```
 
-## 与 LSP 模块的配对关系（重要）
+## 与 LSPosed 模块的配对关系（重要）
 
 - **属性 1 + 无 LSP** = SystemUI `TinyKeyguardPanel` NPE 崩溃环（refMD FoldState §38）
-  → `service.sh` 已内置"检测到 LSP 未安装则属性还原 4"，`customize.sh` 也会在安装时拦截。
-- **属性 1 + 无 CWB 保护** = composer CWB 崩溃（refMD `CWB_Inject_Breakage.md`）
-  → `post-fs-data.sh` 对 flip1 设 `vendor.display.disable_cwb_call=1`。
-- 正确组合：**KSU 属性模块 + LSP 模块 + 身份排除 + 全 scope**，或**都不装**（属性 4 原生）。
+  → `service.sh` 有"未装则还原 4"和"崩溃自愈"两道保险，`customize.sh` 安装时也会拦。
+- **属性 1 + 无 CWB 保护**（flip1）= composer CWB 崩溃 → `post-fs-data.sh` 对 flip1 设保护。
+- 正确组合：**KSU 配套模块 + LSPosed 模块 + scope 全勾**，或**都不装**（属性 4 原生）。
+
+## 版本
+
+- v4（2026-11-16）：并入 flip2 触摸补丁（OS4.0.3 哈希 `04ae4874…`）与单外屏自动切换；
+  新增 `persist.flipunlock.outer.force_closed` 开关；`uninstall.sh` 清理该开关。
