@@ -115,6 +115,8 @@ object Config {
         "persist.flipunlock.wallpaper.lock",
         "persist.flipunlock.wallpaper.identity",
         "persist.flipunlock.app.intercept",
+        "persist.flipunlock.blur.probe",
+        "persist.flipunlock.blur.stab",
     )
 
     // Master switch
@@ -139,6 +141,11 @@ object Config {
     //     真正需要它的是 **NoProp（属性 4，合盖时 sFolded=true）**，那边是常开。
     //     留着这条通道只是为了「身份回到 4」时能一键打开。
     val appIntercept: Boolean get() = enabled && raw("persist.flipunlock.app.intercept", false)
+    // BlurProbe(模糊下发探针)开关 — 只统计+限流打印, 不改行为。默认 true(refMD §44.13 排查用)
+    val blurProbe: Boolean get() = enabled && raw("persist.flipunlock.blur.probe", true)
+    // BlurProbe 去重(stab)开关 — 同一 View 半径没变就不重复下发 setMiSelfBlur。
+    //   默认 false: 先只探测; 打开后若闪烁消失, 即证明"每帧重复下发同一半径"是直接成因。
+    val blurStab: Boolean get() = enabled && raw("persist.flipunlock.blur.stab", false)
 
     // Gesture — keep together
     val gestureHome: Boolean get() = enabled && raw("persist.flipunlock.gesture.home", true)

@@ -1,6 +1,7 @@
 package com.example.flipunlock
 
 import com.example.flipunlock.hook.BaseHook
+import com.example.flipunlock.hook.blur.BlurProbe
 import com.example.flipunlock.hook.aod.AodHook
 import com.example.flipunlock.hook.identity.CameraCutoutFixHook
 // import com.example.flipunlock.hook.identity.Flip1AodIdentityHook  // [2026-08-15 注释] 最小集合实验
@@ -52,6 +53,7 @@ class Main : XposedModule() {
     // 2026-08-22 审查整理: 激活项见下; 未激活项一律注释 + 保留方法体/import(HANDOFF §8),
     //   状态变化以 README.md「Hook 架构」为准。未注册文件(旧方案/已废弃)不删, 便于恢复。
     private val packageHooks = listOf<BaseHook>(
+        BlurProbe,                      // [2026-11-17] 模糊下发探针(systemui + miuihome): 定位谁在每帧下发 blur; stab 开关可去重
         // FlashlightHook,               // [2026-08-15 注释] 最小集合实验: 保留 TinyScreenFix/SystemUiKeyguardFix
         // FlashlightStateHook,          // [2026-08-14 注释] SystemUI getCurrentState→3 对手电筒无效果(实测), 回 FlashlightHook
         SFDeviceGestureHook,            // 外屏上滑手势: isInSFDeviceFoldedMode→false + force_fsg_nav_bar→true(Lite) [2026-08-15 恢复]
