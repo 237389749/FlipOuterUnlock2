@@ -1,10 +1,8 @@
 package com.example.flipunlock.hook.blur
 
-import android.graphics.Point
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
-import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -65,7 +63,7 @@ object BlurProbe : BaseHook() {
             log("BlurProbe: 两个开关都关 (blur.probe/blur.stab)，skip")
             return
         }
-        log("BlurProbe: loading for ${param.packageName} probe=$probe stab=$stab")
+        log("BlurProbe: loading for ${param.packageName} proc=${currentProcessName()} probe=$probe stab=$stab")
         val cl = processClassLoader(param.classLoader)
 
         hookMiSelfBlur(cl, stab)
@@ -73,51 +71,69 @@ object BlurProbe : BaseHook() {
     }
 
     /**
-     * `View#setMiSelfBlur(int radius, List<Point> colors)`。
-     * 去重逻辑：同一 View、半径与上一次相同 → 直接跳过原方法（不产生 SF 事务）。
+     * `View#setMiSelfBlur(...)` —— 4.0.3 上**签名与反编译的 `(int, List)` 不符**
+     * （实测 `android.view.View#setMiSelfBlur` NoSuchMethod），所以这里：
+     *   1. 先把 View 上所有名字含 "Blur" 的方法签名打出来（一次性，定位真实 API）
+     *   2. 再按名字前缀 `setMiSelfBlur` 把所有重载都挂上（不猜参数类型）
      */
     private fun hookMiSelfBlur(cl: ClassLoader, stab: Boolean) = safeHook("BlurProbe.setMiSelfBlur") {
         val viewCls = cl.findClassUp(CLS_VIEW) ?: run {
             log("BlurProbe: $CLS_VIEW 不可加载")
             return@safeHook
         }
-        val m: Method = runCatching {
-            viewCls.method("setMiSelfBlur", Int::class.javaPrimitiveType!!, List::class.java)
-        }.getOrElse {
-            log("BlurProbe: setMiSelfBlur(int,List) 找不到: ${it.message}")
+
+        // 一次性把候选签名打出来，别再靠猜
+        val candidates = runCatching {
+            viewCls.declaredMethods.filter { it.name.contains("Blur", ignoreCase = true) }
+        }.getOrDefault(emptyList())
+        if (candidates.isEmpty()) {
+            log("BlurProbe: View 上没有任何名字含 Blur 的方法（可能都在 MiBlurCompat 里）")
+        } else {
+            candidates.take(20).forEach { m ->
+                log("BlurProbe: View#${m.name}(${m.parameterTypes.joinToString { it.simpleName }})")
+            }
+        }
+
+        val targets = candidates.filter { it.name.startsWith("setMiSelfBlur") }
+        if (targets.isEmpty()) {
+            log("BlurProbe: 没有 setMiSelfBlur* 可挂，只保留 Transaction 探针")
             return@safeHook
         }
-        hook(m) { chain ->
-            val radius = chain.args.getOrNull(0) as? Int ?: -1
-            val thisObj = chain.thisObject
-            val n = miSelfBlurCalls.incrementAndGet()
-            distinctRadii.add(radius)
 
-            if (stab && thisObj != null) {
-                val prev = synchronized(lastRadius) { lastRadius[thisObj] }
-                if (prev != null && prev == radius) {
-                    miSelfBlurSkips.incrementAndGet()
+        targets.forEach { m ->
+            runCatching {
+                hook(m) { chain ->
+                    val radius = (chain.args.getOrNull(0) as? Int) ?: -1
+                    val thisObj = chain.thisObject
+                    val n = miSelfBlurCalls.incrementAndGet()
+                    distinctRadii.add(radius)
+
+                    if (stab && thisObj != null) {
+                        val prev = synchronized(lastRadius) { lastRadius[thisObj] }
+                        if (prev != null && prev == radius) {
+                            miSelfBlurSkips.incrementAndGet()
+                            if (n % LOG_EVERY == 0L) {
+                                log(
+                                    "BlurProbe: calls=$n skips=${miSelfBlurSkips.get()} " +
+                                        "radii=${distinctRadii.toList().take(12)} (stab=ON)"
+                                )
+                            }
+                            return@hook null
+                        }
+                        synchronized(lastRadius) { lastRadius[thisObj] = radius }
+                    }
+
                     if (n % LOG_EVERY == 0L) {
                         log(
-                            "BlurProbe: calls=$n skips=${miSelfBlurSkips.get()} " +
-                                "radii=${distinctRadii.toList().take(12)} (stab=ON, 跳过同一半径)"
+                            "BlurProbe: calls=$n radius=$radius args=${chain.args.size} " +
+                                "radii=${distinctRadii.toList().take(12)} stab=$stab"
                         )
                     }
-                    return@hook null
+                    chain.proceed()
                 }
-                synchronized(lastRadius) { lastRadius[thisObj] = radius }
-            }
-
-            if (n % LOG_EVERY == 0L) {
-                val colors = chain.args.getOrNull(1)
-                log(
-                    "BlurProbe: calls=$n radius=$radius colors=${(colors as? List<*>)?.size ?: -1} " +
-                        "radii=${distinctRadii.toList().take(12)} stab=$stab"
-                )
-            }
-            chain.proceed()
+                log("BlurProbe: ✓ View#${m.name}(${m.parameterTypes.joinToString { it.simpleName }}) hooked")
+            }.onFailure { log("BlurProbe: hook View#${m.name} failed: ${it.message}") }
         }
-        log("BlurProbe: ✓ View.setMiSelfBlur(int,List) hooked (stab=$stab)")
     }
 
     /** `SurfaceControl.Transaction#setBackgroundBlurRadius(SurfaceControl, int)` */
