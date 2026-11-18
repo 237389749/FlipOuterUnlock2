@@ -33,12 +33,19 @@ object WallpaperFixHook {
     // flip1/flip2 外屏都是 1208×1392(§44 状态表), 最大边=1392; 换机型需调整
     private const val MAX_DIM = 1392
 
+    // 2026-11-18: 外屏真实分辨率（宽×高）。用于「精确尺寸」实验：
+    //   方形 1392×1392 盖到 1208×1392 上必然横向缩放/裁切 92px，
+    //   怀疑这就是背景/模糊每帧重算时结果不一致的来源（见 refMD §44.13）。
+    //   精确尺寸 = 壁纸与屏幕 1:1，不做 cover 缩放。
+    private const val EXACT_W = 1208
+    private const val EXACT_H = 1392
+
     fun hook(param: SystemServerStartingParam) {
         if (!Config.wallpaperFix) {
             log("WallpaperFix: DISABLED by persist.flipunlock.wallpaper.fix")
             return
         }
-        log("WallpaperFix: setting up")
+        log("WallpaperFix: setting up (exact=${Config.wallpaperExact})")
         safeHook("WallpaperFix") {
             runCatching {
                 val cls = param.classLoader.loadClass("com.android.server.wallpaper.WallpaperManagerService")
@@ -55,8 +62,14 @@ object WallpaperFixHook {
                     val ratio = if (h > 0) w.toFloat() / h else 0f
                     val wrongRatio = ratio < 0.75f || ratio > 1.4f
                     if (displayId == 0 && (overLimit || wrongRatio)) {
-                        log("WallpaperFix: ✓ clamp setDimensionHints ${w}x$h (d$displayId) -> ${MAX_DIM}x$MAX_DIM")
-                        chain.proceed(arrayOf<Any?>(MAX_DIM, MAX_DIM, chain.args[2], chain.args[3]))
+                        if (Config.wallpaperExact) {
+                            // 精确尺寸：与外屏 1:1，避免 cover 缩放/裁切
+                            log("WallpaperFix: ✓ exact setDimensionHints ${w}x$h (d$displayId) -> ${EXACT_W}x$EXACT_H")
+                            chain.proceed(arrayOf<Any?>(EXACT_W, EXACT_H, chain.args[2], chain.args[3]))
+                        } else {
+                            log("WallpaperFix: ✓ clamp setDimensionHints ${w}x$h (d$displayId) -> ${MAX_DIM}x$MAX_DIM")
+                            chain.proceed(arrayOf<Any?>(MAX_DIM, MAX_DIM, chain.args[2], chain.args[3]))
+                        }
                     } else {
                         chain.proceed()
                     }

@@ -117,6 +117,7 @@ object Config {
         "persist.flipunlock.app.intercept",
         "persist.flipunlock.blur.probe",
         "persist.flipunlock.blur.stab",
+        "persist.flipunlock.wallpaper.exact",
     )
 
     // Master switch
@@ -146,6 +147,10 @@ object Config {
     // BlurProbe 去重(stab)开关 — 同一 View 半径没变就不重复下发 setMiSelfBlur。
     //   默认 false: 先只探测; 打开后若闪烁消失, 即证明"每帧重复下发同一半径"是直接成因。
     val blurStab: Boolean get() = enabled && raw("persist.flipunlock.blur.stab", false)
+    // 壁纸尺寸「精确模式」—— 让 setDimensionHints 输出真实外屏尺寸 1208×1392（1:1，不 cover 缩放），
+    //   而不是方形 1392×1392。用于验证「背景模糊每帧重算差异是否源于壁纸缩放」(refMD §44.13)。
+    //   默认 false（保持既有方形行为）。
+    val wallpaperExact: Boolean get() = enabled && raw("persist.flipunlock.wallpaper.exact", false)
 
     // Gesture — keep together
     val gestureHome: Boolean get() = enabled && raw("persist.flipunlock.gesture.home", true)
