@@ -45,7 +45,8 @@ object BlurProbe : BaseHook() {
     private const val CLS_VIEW = "android.view.View"
     private const val CLS_TXN = "android.view.SurfaceControl\$Transaction"
 
-    /** 限流：每 N 次调用打一条汇总日志（logcat 8M 缓冲，别刷爆） */
+    /** 限流：前 HEAD_LOG 次逐条打印（用于判断"到底有没有被调用"），之后每 LOG_EVERY 次一条 */
+    private const val HEAD_LOG = 60L
     private const val LOG_EVERY = 300L
 
     private val miSelfBlurCalls = AtomicLong(0)
@@ -112,7 +113,7 @@ object BlurProbe : BaseHook() {
                         val prev = synchronized(lastRadius) { lastRadius[thisObj] }
                         if (prev != null && prev == radius) {
                             miSelfBlurSkips.incrementAndGet()
-                            if (n % LOG_EVERY == 0L) {
+                            if (n <= HEAD_LOG || n % LOG_EVERY == 0L) {
                                 log(
                                     "BlurProbe: calls=$n skips=${miSelfBlurSkips.get()} " +
                                         "radii=${distinctRadii.toList().take(12)} (stab=ON)"
@@ -123,7 +124,7 @@ object BlurProbe : BaseHook() {
                         synchronized(lastRadius) { lastRadius[thisObj] = radius }
                     }
 
-                    if (n % LOG_EVERY == 0L) {
+                    if (n <= HEAD_LOG || n % LOG_EVERY == 0L) {
                         log(
                             "BlurProbe: calls=$n radius=$radius args=${chain.args.size} " +
                                 "radii=${distinctRadii.toList().take(12)} stab=$stab"
@@ -152,7 +153,7 @@ object BlurProbe : BaseHook() {
         hook(m) { chain ->
             val r = chain.args.getOrNull(1) as? Int ?: -1
             val n = txnBlurCalls.incrementAndGet()
-            if (n % LOG_EVERY == 0L) log("BlurProbe: txn.setBackgroundBlurRadius calls=$n radius=$r")
+            if (n <= HEAD_LOG || n % LOG_EVERY == 0L) log("BlurProbe: txn.setBackgroundBlurRadius calls=$n radius=$r")
             chain.proceed()
         }
         log("BlurProbe: ✓ Transaction.setBackgroundBlurRadius hooked")
