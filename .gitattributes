@@ -3,5 +3,6 @@
 # a stray \r. Windows checkouts were shipping CRLF blobs -> broken zip.
 *.sh            text eol=lf
 *.prop          text eol=lf
+*.xml           text eol=lf
 *.jks           binary
 *.keystore      binary

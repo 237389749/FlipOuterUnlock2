@@ -1,0 +1,65 @@
+<layouts>
+  <layout>
+    <state>0</state> <!-- FOLDED -->
+    <display enabled="true" defaultDisplay="true">
+      <address>4630946219955703956</address>
+    </display>
+    <display enabled="false">
+      <address>4630946916234099603</address>
+    </display>
+  </layout>
+  <layout>
+    <state>1</state> <!-- TENT -->
+    <display enabled="true" defaultDisplay="true">
+      <address>4630946219955703956</address>
+    </display>
+    <display enabled="false">
+      <address>4630946916234099603</address>
+    </display>
+  </layout>
+  <layout>
+    <state>2</state> <!-- HALF_OPENED -->
+    <display enabled="true" defaultDisplay="true">
+      <address>4630946219955703956</address>
+    </display>
+    <display enabled="false">
+      <address>4630946916234099603</address>
+    </display>
+  </layout>
+  <layout>
+    <state>3</state> <!-- OPENED -->
+    <display enabled="true" defaultDisplay="true">
+      <address>4630946219955703956</address>
+    </display>
+    <display enabled="false">
+      <address>4630946916234099603</address>
+    </display>
+  </layout>
+  <layout>
+    <state>4</state> <!-- OPENED_REVERSE -->
+    <display enabled="true" defaultDisplay="true">
+      <address>4630946219955703956</address>
+    </display>
+    <display enabled="false">
+      <address>4630946916234099603</address>
+    </display>
+  </layout>
+  <layout>
+    <state>5</state> <!-- OPENED_PRESENTATION -->
+    <display enabled="true" defaultDisplay="true">
+      <address>4630946219955703956</address>
+    </display>
+    <display enabled="false">
+      <address>4630946916234099603</address>
+    </display>
+  </layout>
+  <layout>
+    <state>6</state> <!-- OPENED_REVERSE_PRESENTATION -->
+    <display enabled="true" defaultDisplay="true">
+      <address>4630946219955703956</address>
+    </display>
+    <display enabled="false">
+      <address>4630946916234099603</address>
+    </display>
+  </layout>
+</layouts>

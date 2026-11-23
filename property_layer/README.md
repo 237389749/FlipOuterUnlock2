@@ -13,8 +13,15 @@
 
 1. `panic_on_oops=0` —— 兜底，任何 oops 不直接硬复位；
 2. `resetprop persist.sys.multi_display_type 1` —— 身份 4（flip 原生）→ 1（普通手机），**LSPosed 模块的整套 hook 依赖这个**；
-3. flip1（`ro.product.model=2405*`）设 CWB 保护属性；
-4. **flip2（`ro.product.device=bixi`）换 `synaptics_tcm2.ko`**：拔掉内屏后 `goodix_ts_resume` 会调
+3. **flip2 单外屏：把 `outer_only_layout.xml` 写到 `/data/system/displayconfig/display_layout_configuration.xml`**
+   —— 面板拆掉后 DSI 认不到面板（`dmesg`：`panel_recognize_err` / `mi,panel-id not specified`），
+   驱动回落到一个默认 mode，框架于是多出**第二块 display（1440×3200，不是本机内屏的 1224×2912）**；
+   它与主屏同 display group、每帧参与合成，逼着 SurfaceFlinger 的 PassBlur 按两个 viewport 各重建一次，
+   主屏交替读到内屏居中裁切的那份结果 → **控制中心 / 大文件夹闪烁**（详见 refMD `FoldState_Device_Identity.md` §44.14 H/K）。
+   开关 `persist.flipunlock.outer.disable_inner`（默认 1）；
+   地址模板按 OS4.0.3 实测写死，`service.sh` 发现地址漂移会按真实值重写（下次开机生效）；
+4. flip1（`ro.product.model=2405*`）设 CWB 保护属性；
+5. **flip2（`ro.product.device=bixi`）换 `synaptics_tcm2.ko`**：拔掉内屏后 `goodix_ts_resume` 会调
    `get_capfold_information`，内屏不在 → 全局上下文 NULL → oops → 硬复位。补丁把函数入口改成
    `mov w0,#-19; ret`，调用方只记一条 `get capfold information failed`，随后正常 resume。
    **带哈希闸门**：`EXPECTED_SHA` 必须匹配当前 ROM 的 stock 模块；OTA 后不匹配就**跳过换模块**
@@ -28,9 +35,13 @@
 3. SystemUI 崩溃自愈：1 分钟内崩 3 次 → 身份还原 4 + 重启 SystemUI；
 4. **flip2 单外屏**：等 `uptime ≥ 60` → `cmd device_state state 0`（外屏变 logical display 0）
    → 属性 1 时再 `wm fixed-to-user-rotation enabled` 钉竖屏。
-   开关：`persist.flipunlock.outer.force_closed`（默认 1；设 0 表示改由 LSPosed 的 `DisplayStateHook` 负责）。
+   开关：`persist.flipunlock.outer.force_closed`（默认 1；设 0 表示改由 LSPosed 的 `DisplayStateHook` 负责）；
+5. **布局表自检**：从 `dumpsys display` 读真实 outer / inner 地址，与已装的表比对；
+   地址漂移（换 ROM）就按真实值重写，日志写明"下次开机生效"。
 
-`uninstall.sh`：`multi_display_type` 写回 4（persist 属性不会自己消失），清掉 CWB 运行时属性。
+`uninstall.sh`：`multi_display_type` 写回 4（persist 属性不会自己消失），清掉 CWB 运行时属性、
+单外屏开关，并**删掉 `/data/system/displayconfig/display_layout_configuration.xml`**
+（否则幽灵屏会一直保持被禁用；MIUI 自己的 `display_cloud_backup.xml` 不动）。
 
 ## 重新打包
 

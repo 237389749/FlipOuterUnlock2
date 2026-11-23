@@ -6,6 +6,7 @@
 #      otherwise property 1 alone makes SystemUI crash-loop
 #   3. crash self-heal: 3 SystemUI crashes within ~1 min -> restore identity 4
 #   4. detect single-outer-screen mode (inner panel removed) -> persist.flipunlock.single_outer
+#   4b. keep the /data display layout table in sync with the live display addresses
 #   5. only in that mode: force device_state=CLOSED so the outer panel becomes
 #      logical display 0, and pin the rotation
 #
@@ -89,6 +90,45 @@ if [ "$(getprop ro.product.device)" = "bixi" ]; then
     fi
     setprop persist.flipunlock.single_outer $SINGLE_OUTER
     echo "persist.flipunlock.single_outer=$(getprop persist.flipunlock.single_outer)"
+
+    # ---- 4b. display layout self-check (address drift after an OTA) ----------
+    # post-fs-data installed the template using the measured OS4.0.3 addresses.
+    # If the live addresses differ (ROM update, different phantom), rewrite the
+    # table from what is actually present. The file is read at boot, so the new
+    # table takes effect on the NEXT reboot -- say so in the log.
+    if [ "$SINGLE_OUTER" = "1" ] && [ "$(getprop persist.flipunlock.outer.disable_inner 1)" = "1" ]; then
+        F=/data/system/displayconfig/display_layout_configuration.xml
+        OUTER=$(dumpsys display 2>/dev/null | grep -m1 -A1 'mDisplayId=0$' | sed -n 's/.*local:\([0-9]*\).*/\1/p' | head -1)
+        INNER=$(dumpsys display 2>/dev/null | grep 'DisplayDeviceInfo' | grep -o 'local:[0-9]*' | sed 's/local://' | grep -v "^$OUTER$" | head -1)
+        echo "display: live outer=$OUTER inner=$INNER"
+        if [ -z "$OUTER" ] || [ -z "$INNER" ]; then
+            echo "display: addresses unresolved -> layout untouched"
+        elif grep -q "<address>$OUTER</address>" "$F" 2>/dev/null &&
+             grep -q "<address>$INNER</address>" "$F" 2>/dev/null; then
+            echo "display: layout table matches live displays"
+        else
+            mkdir -p /data/system/displayconfig
+            {
+                echo '<layouts>'
+                for st in 0 1 2 3 4 5 6; do
+                    echo '  <layout>'
+                    echo "    <state>$st</state>"
+                    echo '    <display enabled="true" defaultDisplay="true">'
+                    echo "      <address>$OUTER</address>"
+                    echo '    </display>'
+                    echo '    <display enabled="false">'
+                    echo "      <address>$INNER</address>"
+                    echo '    </display>'
+                    echo '  </layout>'
+                done
+                echo '</layouts>'
+            } > "$F"
+            chmod 644 "$F"
+            restorecon -R /data/system/displayconfig 2>/dev/null
+            echo "display: layout rewritten for live addresses -> takes effect next boot"
+            log -t flip_prop "display layout rewritten (addresses drifted)"
+        fi
+    fi
 
     if [ "$SINGLE_OUTER" = "1" ] && [ "$(getprop persist.flipunlock.outer.force_closed 1)" = "1" ]; then
         while :; do

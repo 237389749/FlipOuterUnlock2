@@ -25,7 +25,14 @@ resetprop -n vendor.display.enable_allow_idle_fallback 1
 # forced CLOSED) after the user thought everything was removed.
 resetprop --delete persist.flipunlock.single_outer 2>/dev/null
 resetprop --delete persist.flipunlock.outer.force_closed 2>/dev/null
+resetprop --delete persist.flipunlock.outer.disable_inner 2>/dev/null
 resetprop --delete persist.flipunlock.touchpatch.status 2>/dev/null
+
+# display layout override: without this the phantom second display stays
+# disabled across the uninstall (the file lives in /data, not in the module).
+# Only our own file is removed; MIUI's display_cloud_backup.xml is left alone.
+rm -f /data/system/displayconfig/display_layout_configuration.xml
+echo "uninstall: display layout override removed (phantom display returns next boot)"
 
 # rotation pinned by service.sh -> give auto-rotate back to the user
 settings delete system accelerometer_rotation 2>/dev/null

@@ -30,6 +30,41 @@ echo "=== $(date) flip_prop post-fs-data ==="
 resetprop persist.sys.multi_display_type 1
 echo "multi_display_type=$(getprop persist.sys.multi_display_type) device=$(getprop ro.product.device) rom=$(getprop ro.build.version.incremental)"
 
+# ---- 1b. single outer screen: disable the phantom second display -------------
+# Why: with the inner panel removed the DSI panel is not recognised
+#   (dmesg: panel_recognize_err / mi,panel-id not specified / no port node in
+#    qcom,dsi-display-primary), so the driver falls back to a default mode and
+#   the framework ends up with a SECOND display (1440x3200 -- a slab-phone mode,
+#   not this panel's 1224x2912).
+# That phantom shares display group 0 with the outer screen, composes every
+#   frame, and forces SurfaceFlinger's PassBlur to be rebuilt once per viewport;
+#   the outer screen then alternates between its own crop and the phantom's
+#   centred crop -> the control-centre / big-folder flicker
+#   (refMD FoldState_Device_Identity.md 44.14 H/K).
+# The only user-space fix is a display layout table that disables the phantom by
+#   address; /data/system/displayconfig/ overrides /odm and survives OTA.
+# Switches:
+#   persist.flipunlock.outer.disable_inner (default 1; 0 = leave the phantom on)
+#   persist.flipunlock.single_outer       (set by service.sh once the inner
+#                                          panel's touch device is confirmed absent)
+# Template: $MODDIR/outer_only_layout.xml (bixi / OS4.0.3 measured addresses).
+#   service.sh rewrites it when the live addresses drift, effective next boot.
+if [ "$(getprop ro.product.device)" = "bixi" ]; then
+    if [ "$(getprop persist.flipunlock.outer.disable_inner 1)" != "1" ]; then
+        echo "display: phantom disable off (persist.flipunlock.outer.disable_inner=0)"
+    elif [ "$(getprop persist.flipunlock.single_outer)" != "1" ]; then
+        echo "display: phantom disable skipped (single_outer not set yet -> next boot)"
+    elif [ ! -f "$MODDIR/outer_only_layout.xml" ]; then
+        echo "display: outer_only_layout.xml missing in module -> phantom stays on"
+    else
+        mkdir -p /data/system/displayconfig
+        cp -f "$MODDIR/outer_only_layout.xml" /data/system/displayconfig/display_layout_configuration.xml
+        chmod 644 /data/system/displayconfig/display_layout_configuration.xml
+        restorecon -R /data/system/displayconfig 2>/dev/null
+        echo "display: phantom second display disabled via /data layout table"
+    fi
+fi
+
 # ---- 2. flip1 CWB guard ------------------------------------------------------
 case "$(getprop ro.product.model)" in
   2405*)
