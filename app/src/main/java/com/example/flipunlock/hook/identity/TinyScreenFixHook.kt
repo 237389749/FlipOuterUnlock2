@@ -37,6 +37,15 @@ object TinyScreenFixHook : BaseHook() {
     override val targetPackages = listOf("*")
 
     override fun setupHooks(param: PackageReadyParam) {
+        // [2026-11-23 修] 通配 hook 必须先过 Exclusions（铁律 3）：SystemUI 的锁屏面板与搜狗键盘高度
+        // 依赖真实 tiny 身份。原来这里只查自己的开关，于是 SystemUI 在 1208×1392 外屏上按普通手机排版，
+        // 逼得 QSTileMinCount/QSPanelWidth/SystemUiKeyguard 三个补丁去补窟窿（模块自己跟自己的补丁打架）。
+        val proc0 = currentProcessName()
+        if (param.packageName in Exclusions.DEVICE_IDENTITY ||
+            (proc0 != null && proc0 in Exclusions.DEVICE_IDENTITY)) {
+            log("TinyScreenFix: skip, excluded identity pkg=${param.packageName} proc=$proc0")
+            return
+        }
         if (!Config.tinyScreenFix) {
             log("TinyScreenFix: DISABLED by persist.flipunlock.identity.tinyscreen")
             return

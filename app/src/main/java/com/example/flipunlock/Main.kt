@@ -4,14 +4,12 @@ import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.blur.BlurProbe
 import com.example.flipunlock.hook.aod.AodHook
 import com.example.flipunlock.hook.identity.CameraCutoutFixHook
-// import com.example.flipunlock.hook.identity.Flip1AodIdentityHook  // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.identity.TinyScreenFixHook
 import com.example.flipunlock.hook.ime.ImeNavBarFixHook
 import com.example.flipunlock.hook.miuihome.SFDeviceGestureHook
 import com.example.flipunlock.hook.miwallpaper.WallpaperIdentityFix
 import com.example.flipunlock.hook.settings.ImeBottomSupportHook
 import com.example.flipunlock.hook.system_server.AppFullscreen
-// import com.example.flipunlock.hook.system_server.AppRestriction     // [2026-08-15 注释] 最小集合实验
 import com.example.flipunlock.hook.system_server.AppInterceptUnlock
 import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.system_server.DisplayStateHook
@@ -27,7 +25,6 @@ import com.example.flipunlock.hook.camera.CameraFixHook
 // import com.example.flipunlock.hook.systemui.FlashlightHook          // [2026-08-15 注释] 最小集合实验
 // import com.example.flipunlock.hook.systemui.NotifFlipTipFixHook     // [2026-08-15 注释] 最小集合实验
 // import com.example.flipunlock.hook.systemui.NotifModalFixHook       // [2026-08-15 注释] 最小集合实验
-import com.example.flipunlock.hook.systemui.FlashlightStateHook
 import com.example.flipunlock.hook.systemui.QSTileMinCountFixHook
 import com.example.flipunlock.hook.systemui.QSPanelWidthFixHook
 import com.example.flipunlock.hook.systemui.SystemUiKeyguardFix
@@ -51,33 +48,25 @@ class Main : XposedModule() {
     //     hook's targetPackages against the ready package ("*" = wildcard,
     //     fires on firstPackage only).
     // ──────────────────────────────────────────────────────────────────
-    // 2026-08-22 审查整理: 激活项见下; 未激活项一律注释 + 保留方法体/import(HANDOFF §8),
-    //   状态变化以 README.md「Hook 架构」为准。未注册文件(旧方案/已废弃)不删, 便于恢复。
+    // 2026-11-23 精简: unlock2 = 属性 1 专用。属性层已原生恢复的功能(hook 版身份/启动拦截/fliphome 桌面)
+    //   已整文件删除, 不再用注释当归档 —— 见 refMD/cleaned/Unlock2_Prune_PropertyLayer.md。
+    //   历史版本在 git 里; 删掉的文件不要在本文件复活。
+    // ──────────────────────────────────────────────────────────────────
     private val packageHooks = listOf<BaseHook>(
         BlurProbe,                      // [2026-11-17] 模糊下发探针(systemui + miuihome): 定位谁在每帧下发 blur; stab 开关可去重
-        // FlashlightHook,               // [2026-08-15 注释] 最小集合实验: 保留 TinyScreenFix/SystemUiKeyguardFix
-        // FlashlightStateHook,          // [2026-08-14 注释] SystemUI getCurrentState→3 对手电筒无效果(实测), 回 FlashlightHook
         SFDeviceGestureHook,            // 外屏上滑手势: isInSFDeviceFoldedMode→false + force_fsg_nav_bar→true(Lite) [2026-08-15 恢复]
         SystemUiKeyguardFix,            // systemui 崩溃环兜底: providesTinyKeyguardViewPager 强制 inflate(Lite, flip1 only)
         QSTileMinCountFixHook,          // 控制中心编辑磁贴下限解除(12→4) [2026-08-22 v8: 保险6 插件路径 QSRecord.setRemovable→proceed(true) + 保险7/8 Compose 判定与写库拦截]
         QSPanelWidthFixHook,            // 横屏控制中心磁贴布局撑满屏幕宽度 [2026-08-22: hook MainPanelController.updatePanelWidth, HORIZONTAL→(屏宽-中缝)/2]
-        // NotifFlipTipFixHook,          // [2026-08-15 注释] 最小集合实验
-        // NotifModalFixHook,            // [2026-08-15 注释] 最小集合实验
-        // FlipQsFixHook,               // [2026-08-15 注释] flip 版磁贴设置页(miui.systemui.plugin)非目标, 目标是通用版控制中心
-        // AodHook,                      // [2026-08-15 注释] 最小集合实验
         AodHook,                        // AOD 外屏显示(flip1 only; 内部 gate: flip2 SKIP) [2026-08-15 恢复]
-        // Flip1AodIdentityHook,         // [2026-08-15 注释] 最小集合实验
         TinyScreenFixHook,              // 属性层死角: getScreenType→0 + isTinyScreen/isFlipTinyScreen→false(修 TIM 通知弹提示)
         ImeBottomSupportHook,           // 设置「全面屏键盘优化」入口: 国际版 IS_INTERNATIONAL_BUILD 硬隐藏解除(scope 需含 com.android.settings)
         ImeNavBarFixHook,               // 输入法底部 48dp 导航栏(⌄/🌐)→高度 0 (scope 需含输入法包)
         CameraFixHook,                  // 相机进程内 multi_display_type→4: 修 flip 外屏相机倒置+黑边(属性1副作用) [2026-08-15 恢复, flip1/2 通用]
         WallpaperIdentityFix,           // 壁纸引擎进程内 multi_display_type→4 + which 全集: 修属性1下 miwallpaper 每10s NPE 崩溃环 [2026-11-16 新增, scope 需含 com.miui.miwallpaper]
-        // CameraCutoutFixHook,         // 相机 NPE 防御 —— 由 CutoutRemove.hookApp(camera) 已覆盖, 不重复
-        // DeviceIdentityHook,          // [OFF] 属性层模块已覆盖身份
-        // ScreenTypeHook,              // [OFF]
-        // WidgetRemove, RecentsCacheFix, // [OFF] fliphome
-        // AodHook, ControlCenterHook, StatusBarHook, // [OFF] systemui
-        // SogouInputHook,              // [OFF] IME
+        // 以下为「观察一期」, 文件暂留、未注册(见 refMD Unlock2_Prune_PropertyLayer.md §3):
+        // FlashlightHook, SogouInputHook, ControlCenterHook, NotifModalFixHook, NotifFlipTipFixHook,
+        // FlashlightStateHook, CameraCutoutFixHook
     )
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
@@ -114,10 +103,6 @@ class Main : XposedModule() {
         DisplayKeepOnHook.hook(param)        // [2026-11-15] 单外屏保命: 拦 display 0(幽灵内屏)掉电, 默认关(prop 打开)
         ImmersiveStatusBar.hook(param)       // [2026-11-23] 外屏默认沉浸: 状态栏 114px 让给应用(forced-hide 通道)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
-        // AppContinuity.hook(param)       // [OFF]
-        // AodHook.hookFramework(param)    // [OFF]
-        // SubScreenGesture.hook(param)    // [OFF]
-        // InputMethodHook.hook(param)     // [OFF]
         RotationFixHook.hook(param)        // 旋转解除(Lite 移植): MiuiOrientationImpl 折叠态开放旋转
         VolumeKeyRemapFixHook.hook(param)  // 音量键方向跟随旋转 [2026-09-24 重新启用, 用户决定]
         WallpaperFixHook.hook(param)       // 壁纸尺寸钳制: flip1 右侧黑 + flip2 属性层背景一半黑(2026-08-21 重写恢复注册)
@@ -127,10 +112,10 @@ class Main : XposedModule() {
 
     override fun onPackageReady(param: PackageReadyParam) {
         val proc = currentProcessName()
-        if (proc == "system_server") {
-            log("Main: onPackageReady IN SYSTEM_SERVER pkg=${param.packageName} first=${param.isFirstPackage}")
+        // 每个进程只打一条（原来是 system_server 双份 + 每包一条，进程多时刷 logcat）
+        if (param.isFirstPackage) {
+            log("Main: onPackageReady pkg=${param.packageName} first=true proc=$proc")
         }
-        log("Main: onPackageReady pkg=${param.packageName} first=${param.isFirstPackage} proc=$proc")
         // Camera process: CutoutRemove.hookApp(camera) 相机 cutout 防御(flip1/flip2 都启用) [2026-08-15 恢复]
         // flip1: 防 NPE(用户实测无守护闪退); flip2: 配合 CameraFixHook(属性→4)flip 布局需非 null cutout
         // camera: NPE defence (camera keeps a non-null cutout in its Optional chain)

@@ -135,9 +135,11 @@ object RotationFixHook {
                 hook(method) { chain ->
                     val mode = chain.args[0] as? Int
                     val folded = chain.args[2] as? Boolean
-                    if (mode == 1) {
+                    // [2026-11-23 修] 首参原样写进 accelerometer_rotation_*（Settings 语义 1=FREE / 0=LOCKED，见
+                    // DisplayRotationStubImpl:381）。原来写的是 1→0，方向反了，等于主动锁死。
+                    if (mode == 0) {
                         log("RotationFix: ✓ setUserRotationLockedForSettings LOCKED→FREE (isFolded=$folded)")
-                        chain.proceed(arrayOf<Any?>(0, chain.args[1], chain.args[2]))
+                        chain.proceed(arrayOf<Any?>(1, chain.args[1], chain.args[2]))
                     } else {
                         chain.proceed()
                     }

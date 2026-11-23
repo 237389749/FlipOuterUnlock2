@@ -111,7 +111,8 @@ jobs:
           name: FlipOuterUnlock_${{ steps.artifact_name.outputs.suffix }}
 
       - name: Create Release
-        if: github.ref_type == 'tag'
+        # 缺 secret 时只发 artifact，绝不把 debug 签名的包发成 Release（否则正式包装不上）
+        if: github.ref_type == 'tag' && steps.signing.outputs.available == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: |

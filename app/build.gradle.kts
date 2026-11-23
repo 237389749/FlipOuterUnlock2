@@ -19,7 +19,7 @@ android {
         minSdk = 33
         targetSdk = 36
         versionCode = 12
-        versionName = "3.1"
+        versionName = "3.1-unlock2"
     }
 
     buildTypes {

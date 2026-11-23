@@ -61,13 +61,16 @@ object CutoutRemove {
             val parseMethod = parserClass.method("parse", String::class.java)
             hook(parseMethod, after { chain, result ->
                 val spec = result ?: return@after result
-                spec.setField("mInsets", Insets.of(0, 0, 0, 0))
-                spec.setField("mPath", Path())
-                spec.setField("mLeftBound", Rect(0, 0, 0, 0))
-                spec.setField("mRightBound", Rect(0, 0, 0, 0))
-                spec.setField("mTopBound", Rect(0, 0, 0, 0))
-                spec.setField("mBottomBound", Rect(0, 0, 0, 0))
-                log("CutoutRemove: Parser.parse → zeroed ALL fields (mInsets + mPath + bounds)")
+                // [2026-11-23 修] 逐字段容错: SDK 改一个字段不能把"半清零"的 cutout 丢给应用
+                // (参 refMD CutoutRemove_Issues §4: 半程 patch 正是相机 getCutout() 返回 null 的来源)
+                var zeroed = 0
+                if (runCatching { spec.setField("mInsets", Insets.of(0, 0, 0, 0)) }.isSuccess) zeroed++
+                if (runCatching { spec.setField("mPath", Path()) }.isSuccess) zeroed++
+                if (runCatching { spec.setField("mLeftBound", Rect(0, 0, 0, 0)) }.isSuccess) zeroed++
+                if (runCatching { spec.setField("mRightBound", Rect(0, 0, 0, 0)) }.isSuccess) zeroed++
+                if (runCatching { spec.setField("mTopBound", Rect(0, 0, 0, 0)) }.isSuccess) zeroed++
+                if (runCatching { spec.setField("mBottomBound", Rect(0, 0, 0, 0)) }.isSuccess) zeroed++
+                log("CutoutRemove: Parser.parse → zeroed $zeroed/6 fields")
                 result
             })
             log("CutoutRemove: Parser.parse → full zero enabled (all specs)")
