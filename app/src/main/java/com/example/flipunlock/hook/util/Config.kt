@@ -88,6 +88,7 @@ object Config {
         "persist.flipunlock.display.aod",
         "persist.flipunlock.display.cutout",
         "persist.flipunlock.display.fullscreen",
+        "persist.flipunlock.display.immersive",
         "persist.flipunlock.app.continuity",
         "persist.flipunlock.gesture.home",
         "persist.flipunlock.gesture.back",
@@ -128,6 +129,10 @@ object Config {
     val displayAod: Boolean get() = enabled && raw("persist.flipunlock.display.aod", true)
     val displayCutout: Boolean get() = enabled && raw("persist.flipunlock.display.cutout", true)
     val displayFullscreen: Boolean get() = enabled && raw("persist.flipunlock.display.fullscreen", true)
+    // 外屏默认沉浸（状态栏 114px 让给应用）
+    //   2026-11-23 用户定案：外屏高度宝贵，状态栏默认隐藏；下拉通知栏、顶部下滑临时呼出都保留。
+    //   实现走 DisplayPolicy 的 forced-hide 通道（ImmersiveStatusBar.kt），不碰 policy_control。
+    val displayImmersive: Boolean get() = enabled && raw("persist.flipunlock.display.immersive", true)
 
     // App
     val appContinuity: Boolean get() = enabled && raw("persist.flipunlock.app.continuity", true)
