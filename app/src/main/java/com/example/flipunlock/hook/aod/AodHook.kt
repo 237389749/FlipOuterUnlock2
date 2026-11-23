@@ -52,6 +52,14 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  * is faithful to the old project (with the immutable-args and screen-state bugs fixed)
  * and is expected to need on-device iteration.
  *
+ * ── 两线分工（2026-11-23，v3.4）──
+ * unlock2 = 属性 1：AOD 只维护 **flip1** 路径（flip2 在本文件入口整体 SKIP，flip2 的 AOD 归 NoProp）。
+ * 本次只移植「与机型无关」的修复：① L2 改成「装齐后置位」（失败可重试）
+ * ② setDozeScreenState：state 0 放行 + AOD 关闭时整体放行（不再把熄屏抬成 ON）
+ * ③ DozeLifecycleOwner.initState 防崩（DESTROYED → INITIALIZED）。
+ * **不移植** flip2 专属的 fullAodEnable→false / FlipLinkage 切断 / state 4 原生放行 —— 那些
+ * 只在属性 4 下成立，互抄会把 flip1 弄坏（这正是 11-23 定下的"两线不再互抄"）。
+ *
  * Toggle: persist.flipunlock.display.aod (default true)
  */
 object AodHook : BaseHook() {
@@ -65,6 +73,13 @@ object AodHook : BaseHook() {
     /** Runtime (Layer 2) hooks installed at most once per process. */
     @Volatile
     private var runtimeHooksInstalled = false
+
+    /** DozeLifecycleOwner.initState 防崩已装的 classloader（幂等；同一 loader 只装一次）。 */
+    private val initStateHookedCls = mutableSetOf<ClassLoader>()
+
+    /** AOD 关闭 gate 只打印一次。 */
+    @Volatile
+    private var aodOffGateLogged = false
 
     // ── Framework side (system_server) ──────────────────────────────────
 
@@ -150,8 +165,27 @@ object AodHook : BaseHook() {
         }
         safeHook("AodHook") {
             hookDisplayGetCutout(param.classLoader)
+            hookMiuiDozeServiceOnCreate(param.classLoader)
             hookDreamService(param.classLoader)
         }
+    }
+
+    // ── MiuiDozeService.onCreate → initState 防崩（flip1 崩溃环的根治点）──
+    // 崩溃点在 onCreate → DozeService.create → assembleMachine → initState，
+    // 早于 onDreamingStarted(L2)，所以必须在这里装。此刻 plugin 已挂到实例
+    // （setDozeRequester 就在 onCreate 内），从实例图能拿到 MIUIAod 的 classloader。
+    private fun hookMiuiDozeServiceOnCreate(fallback: ClassLoader) {
+        runCatching {
+            val cl = processClassLoader(fallback)
+            val cls = cl.loadClass("com.android.keyguard.doze.MiuiDozeService")
+            val m = cls.getDeclaredMethod("onCreate").apply { isAccessible = true }
+            hook(m, after { chain, result ->
+                installInitStateDefense(cl)
+                pluginClassLoaderFrom(chain.thisObject)?.let { installInitStateDefense(it) }
+                result
+            })
+            log("AodHook: ✓ MiuiDozeService.onCreate hooked (initState 防崩)")
+        }.onFailure { log("AodHook: MiuiDozeService.onCreate hook failed: ${it.message}") }
     }
 
     private fun currentProcessName(): String? = runCatching {
@@ -279,8 +313,12 @@ object AodHook : BaseHook() {
             method.isAccessible = true
             hook(method) { chain ->
                 val state = chain.args[0] as? Int ?: return@hook chain.proceed()
+                if (passThroughWhenAodOff(state, "#3 setDozeScreenState")) return@hook chain.proceed()
                 when (state) {
-                    0, 1, 3, 4 -> {
+                    // 0 = FINISH：必须放行。强制→2 会让屏幕停在 ON、但 dream 已死且 wakefulness
+                    // 已是 Dozing → 触摸 surface 被移除 = "亮着但没反应"（用户实测复现）。
+                    0 -> chain.proceed()
+                    1, 3, 4 -> {
                         log("AodHook: #3 setDozeScreenState($state) → 2 (ON 亮屏, 旧版方案)")
                         chain.proceed(arrayOf<Any?>(2))
                     }
@@ -306,12 +344,13 @@ object AodHook : BaseHook() {
     // ── Layer 2: runtime hooks via the DozeMachine's own classloader ──
     private fun installRuntimeHooks(dreamService: Any?) {
         if (dreamService == null || runtimeHooksInstalled) return
-        runtimeHooksInstalled = true
-        runCatching {
+        // 2026-11-23: 由「入口置位」改成「装齐后置位」——之前一次失败就永久放弃，
+        // 而 L2 恰恰是最容易在首轮 dream 里拿不到 DozeMachine/loader 的一层。
+        val ok = runCatching {
             val machine = findObjectByClassName(dreamService, "com.miui.aod.doze.DozeMachine")
-                ?: run { log("AodHook/L2: DozeMachine not found"); return }
+                ?: return@runCatching false
             val machineCl = machine.javaClass.classLoader
-                ?: run { log("AodHook/L2: DozeMachine classloader null"); return }
+                ?: return@runCatching false
             log("AodHook/L2: found DozeMachine, cl=${machineCl.javaClass.simpleName}")
 
             val stateClass = machineCl.loadClass("com.miui.aod.doze.DozeMachine\$State")
@@ -326,7 +365,15 @@ object AodHook : BaseHook() {
             hookDozeServiceSetDozeScreenState(dreamService)
             hookDozeHostIsFullAod(dreamService)
             hookFlipLinkageStyleController(machineCl)
-        }.onFailure { log("AodHook/L2: installRuntimeHooks failed", it) }
+            installInitStateDefense(machineCl)
+            true
+        }.getOrDefault(false)
+        if (ok) {
+            runtimeHooksInstalled = true
+            log("AodHook/L2: runtime hooks installed")
+        } else {
+            log("AodHook/L2: install incomplete -> retry on next dreaming start")
+        }
     }
 
     // DozeMachine.requestState(): redirect DOZE/DOZE_SUSPEND/FINISH → DOZE_AOD.
@@ -335,8 +382,10 @@ object AodHook : BaseHook() {
             val reqMethod = machine.javaClass.getDeclaredMethod("requestState", stateClass)
             reqMethod.isAccessible = true
             hook(reqMethod) { chain ->
+                // 2026-11-23: FINISH 不再被改写。拦 FINISH 会让 dream 无法结束（状态机与
+                // wakefulness 不一致），是崩溃环/“AOD 退不出去”的疑点；DOZE/DOZE_SUSPEND 仍抬到 AOD。
                 when (chain.args[0]?.toString()) {
-                    "DOZE", "DOZE_SUSPEND", "FINISH" -> chain.proceed(arrayOf<Any?>(dozeAod))
+                    "DOZE", "DOZE_SUSPEND" -> chain.proceed(arrayOf<Any?>(dozeAod))
                     else -> chain.proceed()
                 }
             }
@@ -353,8 +402,10 @@ object AodHook : BaseHook() {
             method.isAccessible = true
             hook(method) { chain ->
                 val s = chain.args[0] as? Int ?: return@hook chain.proceed()
+                if (passThroughWhenAodOff(s, "L2 DozeService.setDozeScreenState")) return@hook chain.proceed()
                 when (s) {
-                    0, 1, 3, 4 -> chain.proceed(arrayOf<Any?>(2))
+                    0 -> chain.proceed()             // FINISH 放行（同 #3）
+                    1, 3, 4 -> chain.proceed(arrayOf<Any?>(2))
                     else -> chain.proceed()
                 }
             }
@@ -392,6 +443,117 @@ object AodHook : BaseHook() {
                 log("AodHook/L2: FlipLinkageStyleController.isUsingFlip → true")
             }.onFailure { log("AodHook/L2: isUsingFlip failed", it) }
         }.onFailure { log("AodHook/L2: FlipLinkageStyleController not found", it) }
+    }
+
+    // ── 公共 helper：Context / AOD 开关 / plugin classloader / initState 防崩 ──
+
+    private fun systemContext(): android.content.Context? = runCatching {
+        val at = Class.forName("android.app.ActivityThread")
+        (at.getMethod("currentApplication").invoke(null) as? android.content.Context)
+            ?: (at.getMethod("getSystemContext").invoke(null) as? android.content.Context)
+    }.getOrNull()
+
+    private fun aodEnabledBySetting(): Boolean = runCatching {
+        val ctx = systemContext() ?: return@runCatching true
+        android.provider.Settings.Secure.getInt(ctx.contentResolver, "doze_always_on", 0) == 1
+    }.getOrDefault(true)
+
+    /**
+     * true = 系统设置里 AOD 已关闭 → 调用方应**原样放行**屏幕状态，不要抬成 2(ON)。
+     *
+     * 为什么必须运行时判定（不能安装期早退）：AOD 开关切换后不重启 SystemUI 也要生效。
+     * 不判的后果（用户实测）：关闭 AOD 后，GXZW 息屏指纹提示触发的 doze 被抬成 2(ON) →
+     * 屏幕亮起 + 背景全黑 + 只剩指纹图标。
+     */
+    private fun passThroughWhenAodOff(state: Int, tag: String): Boolean {
+        if (aodEnabledBySetting()) return false
+        if (!aodOffGateLogged) {
+            aodOffGateLogged = true
+            log("AodHook: AOD 已关闭 (doze_always_on != 1) → $tag($state) 放行, 不抬屏")
+        }
+        return true
+    }
+
+    /** 从对象图反查 MIUIAod plugin 的 ClassLoader（BFS，深度 ≤6，只沿 miui.aod/keyguard 分支）。 */
+    private fun pluginClassLoaderFrom(root: Any?): ClassLoader? {
+        if (root == null) return null
+        val visited = mutableSetOf<Int>()
+        val queue = ArrayDeque<Any>()
+        queue.add(root)
+        var level = 1
+        var depth = 0
+        while (queue.isNotEmpty() && depth <= 6) {
+            var next = 0
+            repeat(level) {
+                if (queue.isEmpty()) return@repeat
+                val obj = queue.removeFirst()
+                if (!visited.add(System.identityHashCode(obj))) return@repeat
+                val cls = obj.javaClass
+                if (cls.name.startsWith("com.miui.aod")) return cls.classLoader
+                for (f in cls.declaredFields) {
+                    val v = runCatching {
+                        f.isAccessible = true
+                        f.get(obj)
+                    }.getOrNull() ?: continue
+                    val n = v.javaClass.name
+                    if (n.startsWith("com.miui.aod") || n.startsWith("com.android.keyguard")) {
+                        queue.add(v)
+                        next++
+                    }
+                }
+            }
+            depth++
+            level = next
+        }
+        return null
+    }
+
+    /** 遍历候选 classloader 补装 initState 防崩（幂等）。 */
+    private fun installInitStateDefense(fallback: ClassLoader) {
+        val candidates = listOfNotNull(
+            runCatching { processClassLoader(fallback) }.getOrNull(),
+            fallback,
+        ).distinct()
+        for (c in candidates) {
+            runCatching { c.loadClass("com.miui.aod.DozeLifecycleOwner") }.onSuccess {
+                hookDozeLifecycleOwnerInitState(c)
+            }
+        }
+    }
+
+    /**
+     * DozeLifecycleOwner.initState 防崩（flip1 实机崩溃环，见 NoProp 同款修复）。
+     *
+     * 现象：`IllegalStateException: no event up from DESTROYED` → SystemUI 崩 → 重启 → 复现。
+     * 根因：LifecycleRegistry 是 static 单例，dream FINISH(ON_DESTROY) 后停在 DESTROYED，
+     * 同进程再次 create(dream 重建) 时 forwardPass 无法从 DESTROYED 前进。
+     * 修法：initState 执行前，若 registry.mState == DESTROYED → 反射直写 INITIALIZED。
+     * 触发前提是本 hook 自己让 dream 在同一进程内结束后重建（#3 抬屏 / L2 强 DOZE_AOD）。
+     */
+    private fun hookDozeLifecycleOwnerInitState(cl: ClassLoader) {
+        if (!initStateHookedCls.add(cl)) return
+        runCatching {
+            val ownerCls = cl.loadClass("com.miui.aod.DozeLifecycleOwner")
+            val registryCls = cl.loadClass("androidx.lifecycle.LifecycleRegistry")
+            val stateCls = cl.loadClass("androidx.lifecycle.Lifecycle\$State")
+            val destroyed = stateCls.getField("DESTROYED").get(null)
+            val initialized = stateCls.getField("INITIALIZED").get(null)
+            val m = ownerCls.getDeclaredMethod("initState").apply { isAccessible = true }
+            hook(m, before { chain ->
+                runCatching {
+                    val owner = chain.thisObject
+                    val regField = ownerCls.getDeclaredField("mLifecycleRegistry").apply { isAccessible = true }
+                    val registry = regField.get(owner)
+                    val mStateField = registryCls.getDeclaredField("mState").apply { isAccessible = true }
+                    if (mStateField.get(registry) == destroyed) {
+                        mStateField.set(registry, initialized)
+                        log("AodHook: ✓ DozeLifecycleOwner registry DESTROYED→INITIALIZED (initState 防崩)")
+                    }
+                }.onFailure { log("AodHook: initState registry reset failed: ${it.message}") }
+                chain.proceed()
+            })
+            log("AodHook: ✓ DozeLifecycleOwner.initState 防崩 hook (cl=$cl)")
+        }.onFailure { log("AodHook: initState hook failed: ${it.message}") }
     }
 
     // ── Object graph traversal (max depth 5, cycle-safe) ────────────────

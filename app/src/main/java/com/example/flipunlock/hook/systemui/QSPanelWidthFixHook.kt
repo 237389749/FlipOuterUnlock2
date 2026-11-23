@@ -78,9 +78,12 @@ object QSPanelWidthFixHook : BaseHook() {
         "miui.systemui.controlcenter.panel.main.MainPanelController\$Style"
 
     /** 插件 dimen 缓存（配置不变时恒定）。 */
-    @Volatile private var dimenPanelWidth = -1
-    @Volatile private var dimenCenterMargin = -1
-    @Volatile private var dimenEndMargin = -1
+    // 未解析哨兵 = Int.MIN_VALUE。资源取不到时值是 -1，那也是**有效结果**、必须缓存：
+    // 原先用 -1 当「未缓存」，结果查不到就一直不命中，每轮 updatePanelWidth 都重跑
+    // Resources.getIdentifier()（Android 最慢 API 之一）。
+    @Volatile private var dimenPanelWidth = Int.MIN_VALUE
+    @Volatile private var dimenCenterMargin = Int.MIN_VALUE
+    @Volatile private var dimenEndMargin = Int.MIN_VALUE
 
     /** 竖屏日志只打一次, 避免 updateResources 反复刷屏。 */
     @Volatile private var portraitLogged = false
@@ -228,7 +231,7 @@ object QSPanelWidthFixHook : BaseHook() {
             1 -> dimenCenterMargin
             else -> dimenEndMargin
         }
-        if (cache >= 0) return cache
+        if (cache != Int.MIN_VALUE) return cache
         val res = ctx.resources
         val id = runCatching { res.getIdentifier(name, "dimen", ctx.packageName) }.getOrNull() ?: 0
         val value = if (id != 0) runCatching { res.getDimensionPixelSize(id) }.getOrDefault(-1) else -1

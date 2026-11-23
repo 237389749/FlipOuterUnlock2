@@ -70,6 +70,28 @@ object ImeNavBarFixHook : BaseHook() {
     /** 防递归：hook 内部要读 captionBar 的原始值时会再次进入自己的 hook。 */
     private val readingCaption = ThreadLocal<Boolean>()
 
+    // ── 外屏 gate（2026-11-23）──────────────────────────────────────────────
+    // 只在「折叠/外屏」时剥 captionBar：展开用内屏时，⌄/🌐 48dp 与 captionBar 是原生
+    // 正常部件，剥掉只会让内屏输入法缺按钮、键盘位置怪。
+    // 判据 = framework 自己维护的 `debug.tracing.device_state`（"0:CLOSED" / "3:OPENED"…），
+    // 任何进程可读；1 s 缓存，避免每次 inset 计算都读 property。
+    // 0=CLOSED / 1=TENT / 4=OPENED_REVERSE 是外屏；2/3 是内屏；读不到就保持原行为。
+    private var lastStateCheck = 0L
+    @Volatile private var outerScreen = true
+
+    private fun isOuterNow(): Boolean {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastStateCheck < 1000L) return outerScreen
+        lastStateCheck = now
+        val raw = runCatching {
+            val sp = Class.forName("android.os.SystemProperties")
+            sp.getMethod("get", String::class.java).invoke(null, "debug.tracing.device_state") as? String
+        }.getOrNull()
+        val id = raw?.substringBefore(':')?.trim()?.toIntOrNull()
+        outerScreen = id == null || id == 0 || id == 1 || id == 4
+        return outerScreen
+    }
+
     override fun setupHooks(param: PackageReadyParam) {
         if (!Config.imeNavBarFix) {
             log("ImeNavBarFix: DISABLED by persist.flipunlock.ime.navbar")
@@ -88,6 +110,7 @@ object ImeNavBarFixHook : BaseHook() {
                     log("ImeNavBarFix: installNavigationBarFrameIfNecessary 找不到, skip")
                 } else {
                     hook(install, after { chain, result ->
+                        if (!isOuterNow()) return@after result   // 内屏：保留 ⌄/🌐
                         val impl = chain.thisObject ?: return@after result
                         val frame = runCatching { impl.getField("mNavigationBarFrame") }.getOrNull() as? View
                             ?: return@after result
@@ -119,6 +142,7 @@ object ImeNavBarFixHook : BaseHook() {
                     WindowInsets::class.java.method(name, Int::class.javaPrimitiveType!!)
                 }.getOrNull() ?: continue
                 hook(m, after { chain, result ->
+                    if (!isOuterNow()) return@after result   // 内屏：captionBar 原样保留
                     val mask = runCatching { chain.args[0] as? Int }.getOrNull() ?: return@after result
                     if (mask and captionBar == 0) return@after result
                     if (readingCaption.get() == true) return@after result
@@ -144,6 +168,7 @@ object ImeNavBarFixHook : BaseHook() {
             runCatching {
                 hook(WindowInsets::class.java.method("isVisible", Int::class.javaPrimitiveType!!),
                     after { chain, result ->
+                        if (!isOuterNow()) return@after result
                         val mask = runCatching { chain.args[0] as? Int }.getOrNull() ?: return@after result
                         if (mask and captionBar != 0 && result == true) false else result
                     })

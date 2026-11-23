@@ -3,6 +3,7 @@ package com.example.flipunlock.hook.blur
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -55,7 +56,11 @@ object BlurProbe : BaseHook() {
 
     /** 每个 View 上次下发的半径（去重用，弱引用避免泄漏不是重点：View 数量有限） */
     private val lastRadius = java.util.WeakHashMap<Any, Int>()
-    private val distinctRadii = java.util.Collections.synchronizedSet(LinkedHashSet<Int>())
+
+    /** 见过的半径：只在「值变化」时写，且无锁（setMiSelfBlur 实测 ≈490 次/秒，
+     *  原先每次调用都 synchronizedSet.add + 全局锁，纯属给热路径添堵）。 */
+    private val distinctRadii: MutableSet<Int> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private val lastSeenRadius = AtomicInteger(Int.MIN_VALUE)
 
     override fun setupHooks(param: PackageReadyParam) {
         val probe = Config.blurProbe
@@ -102,12 +107,14 @@ object BlurProbe : BaseHook() {
         }
 
         targets.forEach { m ->
+            // 非 void 重载在 stab 跳过时必须继续 proceed（返回 null 会被调用方当结果）
+            val returnsVoid = m.returnType == Void.TYPE
             runCatching {
                 hook(m) { chain ->
                     val radius = (chain.args.getOrNull(0) as? Int) ?: -1
                     val thisObj = chain.thisObject
                     val n = miSelfBlurCalls.incrementAndGet()
-                    distinctRadii.add(radius)
+                    if (lastSeenRadius.getAndSet(radius) != radius) distinctRadii.add(radius)
 
                     if (stab && thisObj != null) {
                         val prev = synchronized(lastRadius) { lastRadius[thisObj] }
@@ -119,7 +126,7 @@ object BlurProbe : BaseHook() {
                                         "radii=${distinctRadii.toList().take(12)} (stab=ON)"
                                 )
                             }
-                            return@hook null
+                            return@hook if (returnsVoid) null else chain.proceed()
                         }
                         synchronized(lastRadius) { lastRadius[thisObj] = radius }
                     }

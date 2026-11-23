@@ -42,11 +42,19 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  * Toggle : persist.flipunlock.ui.keyguardfix（默认 true）
  */
 object SystemUiKeyguardFix : BaseHook() {
-    override val targetPackages = listOf("com.android.systemui")
+    // 2026-11-23: LSPosed 2.0.1 在 systemui 进程里只回调 onPackageReady("android")，
+    // 从不回调 ("com.android.systemui") —— 只列包名会让本 hook 永不触发。加上 "android"
+    // 后必须靠 setupHooks 里的进程名守卫限定在 systemui，否则会装到别的 framework 进程。
+    override val targetPackages = listOf("com.android.systemui", "android")
 
     override fun setupHooks(param: PackageReadyParam) {
         if (!Config.keyguardFix) {
             log("SystemUiKeyguardFix: DISABLED by persist.flipunlock.ui.keyguardfix")
+            return
+        }
+        // pkg="android" 是 framework 包回调（systemui 会这样回调），只放行真正的 systemui 进程
+        if (param.packageName == "android" && currentProcessName() != "com.android.systemui") {
+            log("SystemUiKeyguardFix: skip, pkg=android but process=${currentProcessName()}")
             return
         }
         // 2026-08-14: flip2 有 Dummy 保护(§38.2), 属性1下走 Dummy 不崩, 不需要强制 inflate;
@@ -89,13 +97,13 @@ object SystemUiKeyguardFix : BaseHook() {
                 "com.android.systemui.shade.AbstractC4499x63c84e27",
             )
             val cls = candidates.firstNotNullOfOrNull { name ->
-                runCatching { param.classLoader.loadClass(name) }.getOrNull()
+                runCatching { cl.loadClass(name) }.getOrNull()
             }
             if (cls == null) {
                 log("SystemUiKeyguardFix: provider class not found, tried $candidates (R8 drift?)")
                 return@safeHook
             }
-            val shadeViewClass = param.classLoader.loadClass(
+            val shadeViewClass = cl.loadClass(
                 "com.android.systemui.shade.NotificationShadeWindowView")
             val method = cls.method("providesTinyKeyguardViewPager", shadeViewClass)
 
