@@ -43,4 +43,10 @@ if [ "$DEV" = "bixi" ] && [ ! -f "$MODPATH/synaptics_tcm2_patched.ko" ]; then
     ui_print "            -> push a patched ko into $MODPATH before rebooting"
 fi
 
+# 2026-11-23: the touch-only module (installed before LSPosed exists) may already
+# own the driver swap; post-fs-data delegates in that case instead of swapping twice.
+if [ -f /data/adb/modules/flip_outer_force/synaptics_tcm2_patched.ko ]; then
+    ui_print "  [FlipUnlock] flip_outer_force present -> it owns the touch swap (we delegate)"
+fi
+
 ui_print "  [FlipUnlock] install ok"

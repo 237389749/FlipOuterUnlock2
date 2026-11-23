@@ -1,6 +1,6 @@
 id=flipunlock_prop
 name=FlipUnlock Companion (prop + touch + display)
-version=4
-versionCode=4
+version=5
+versionCode=5
 author=flip
-description=companion for the LSPosed module: multi_display_type=1; flip2 touch patch (capfold->ENODEV, fixes inner-panel-removed hard reset); boot-time CLOSED switch for single-outer-screen; flip1 CWB guard
+description=companion for the LSPosed module: multi_display_type=1; flip2 touch patch (capfold->ENODEV, fixes inner-panel-removed hard reset; OS4.0.3/4.0.4 share one stock, delegated to flip_outer_force when installed); boot-time CLOSED switch for single-outer-screen; flip1 CWB guard

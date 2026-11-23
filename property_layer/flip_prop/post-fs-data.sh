@@ -48,15 +48,29 @@ if [ "$(getprop ro.product.device)" = "bixi" ]; then
     VER=$(getprop ro.build.version.incremental)
 
     # stock synaptics_tcm2.ko sha256 per ROM build. Unknown build -> do not guess.
+    # 2026-11-23 measured: the 4.0.4 fastboot package ships a vendor_dlkm whose
+    # synaptics_tcm2.ko is byte-identical to 4.0.3's, and the running kernel is the
+    # same 6.6.118 build -- so ONE payload serves both. (7a1c0640... came from a
+    # different build: it never matched the package and silently skipped the patch.)
     case "$VER" in
-      OS4.0.3*) EXPECTED_SHA=04ae4874ea95a548d7a589304bc30f22f30d17cbd017e9fe7d32763f6aac7cfe ;;
-      OS4.0.4*) EXPECTED_SHA=7a1c0640d1a58b5a3269c2b66a022631f8da7685c1092b82f00d6a937f098b1e ;;
-      *)        EXPECTED_SHA="" ;;
+      OS4.0.3*|OS4.0.4*) EXPECTED_SHA=04ae4874ea95a548d7a589304bc30f22f30d17cbd017e9fe7d32763f6aac7cfe ;;
+      *)                 EXPECTED_SHA="" ;;
     esac
 
     ins() { timeout 10 insmod "$1"; }
 
-    if [ -z "$EXPECTED_SHA" ]; then
+    # One owner for the driver swap: the touch-only module is installed before
+    # LSPosed exists, so when it is present it owns the swap and we must not
+    # rmmod/insmod a second time in the same boot (post-fs-data order is not fixed).
+    TOUCH_OWNER=""
+    OWNER=/data/adb/modules/flip_outer_force
+    if [ -f "$OWNER/synaptics_tcm2_patched.ko" ] && [ ! -e "$OWNER/disable" ]; then
+        TOUCH_OWNER=flip_outer_force
+    fi
+
+    if [ -n "$TOUCH_OWNER" ]; then
+        echo "touch: delegated to $TOUCH_OWNER (owner present) -> no second swap"
+    elif [ -z "$EXPECTED_SHA" ]; then
         echo "touch: unknown ROM '$VER' -> skip (stock driver untouched)"
     elif [ ! -f "$KO" ]; then
         echo "touch: $KO missing -> skip (stock driver untouched)"
@@ -104,7 +118,14 @@ if [ "$(getprop ro.product.device)" = "bixi" ]; then
         fi
     fi
 fi
-setprop persist.flipunlock.touchpatch.status "$([ "$PATCH_OK" = "1" ] && echo patched || echo stock)"
+if [ -n "$TOUCH_OWNER" ]; then
+    TOUCH_STATUS=delegated
+elif [ "$PATCH_OK" = "1" ]; then
+    TOUCH_STATUS=patched
+else
+    TOUCH_STATUS=stock
+fi
+setprop persist.flipunlock.touchpatch.status "$TOUCH_STATUS"
 echo "touch: patch_ok=$PATCH_OK status=$(getprop persist.flipunlock.touchpatch.status)"
 
 # ---- 4. safety net (only when the patch is really in) -------------------------
