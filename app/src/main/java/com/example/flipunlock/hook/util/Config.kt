@@ -1,97 +1,48 @@
 package com.example.flipunlock.hook.util
 
 /**
- * Feature toggles via SystemProperties. All default to true (enabled).
+ * Feature toggles via SystemProperties。所有开关默认 true（除显式标注 false 的）。
  *
- * List all keys and current values:
+ * 查当前值：
  *   getprop | grep persist.flipunlock
  *
- * Set before reboot:
- *   setprop persist.flipunlock.enable false              # master kill switch
- *   setprop persist.flipunlock.display.dual false        # dual display
- *   setprop persist.flipunlock.display.aod false         # outer screen AOD
- *   setprop persist.flipunlock.display.cutout false      # remove cutout
- *   setprop persist.flipunlock.display.fullscreen false  # force app fullscreen (no compat letterbox)
- *   setprop persist.flipunlock.app.continuity false      # app continuity (keep running app on fold)
- *   setprop persist.flipunlock.gesture.home false        # bottom gestures
- *   setprop persist.flipunlock.gesture.back false        # back gestures
- *   setprop persist.flipunlock.ui.lockscreen false       # lock screen layout
- *   setprop persist.flipunlock.ui.widget false           # disable widget overlay
- *   setprop persist.flipunlock.ui.controlcenter false    # control center restore
- *   setprop persist.flipunlock.ui.recentsmenu false      # recents long-press menu
- *   setprop persist.flipunlock.ime false                 # input method freedom
- *   setprop persist.flipunlock.camera true               # camera front→back redirect (broken)
- *   setprop persist.flipunlock.ui.launcherdensity true    # launcher density tweak (not needed)
+ * 常用开关（2026-11-23 清理后，已删功能的开关不再列）：
+ *   persist.flipunlock.enable                 # 总开关
+ *   persist.flipunlock.display.immersive      # 外屏状态栏沉浸
+ *   persist.flipunlock.display.aod            # 外屏 AOD（flip1）
+ *   persist.flipunlock.display.cutout         # 去挖孔
+ *   persist.flipunlock.display.fullscreen     # 去 size-compat letterbox
+ *   persist.flipunlock.display.state          # DeviceState 布局按状态分支
+ *   persist.flipunlock.rotation.fix           # 旋转解除
+ *   persist.flipunlock.volume.keyremap        # 音量键跟随旋转
+ *   persist.flipunlock.wallpaper.fix          # 壁纸尺寸钳制
+ *   persist.flipunlock.wallpaper.lock         # 锁屏壁纸不被 ambient 隐藏
+ *   persist.flipunlock.wallpaper.identity     # miwallpaper 身份还原
+ *   persist.flipunlock.ui.qstilemin           # 控制中心磁贴下限
+ *   persist.flipunlock.ui.qspanelwidth        # 横屏面板宽
+ *   persist.flipunlock.ui.keyguardfix         # 锁屏面板兜底（flip1）
+ *   persist.flipunlock.ui.flashlight          # 手电筒翻转提示直通
+ *   persist.flipunlock.ime.navbar             # 输入法底部 48dp 归零（仅外屏）
+ *   persist.flipunlock.camera.fix             # 相机进程属性→4
+ *   persist.flipunlock.identity.tinyscreen    # getScreenType/isTinyScreen→false
+ *   persist.flipunlock.settings.imebottom     # 设置「全面屏键盘优化」入口
+ *   persist.flipunlock.app.intercept          # 外屏启动拦截解除（默认 false）
+ *   persist.flipunlock.blur.probe / .stab     # 模糊探针 / 去重
+ *   persist.flipunlock.single_outer           # 由 flip_prop 写入，单外屏模式
  *
- * ═══ Dependency / Coupling Notes ═══
- *
- * display.dual ── FOUNDATION ──┐
- *   If disabled, state=6 is not forced. The system may fall back to native
- *   flip behavior (state=0 CLOSED or state=2 OPEN). All hooks that depend
- *   on outer=displayId=0 topology may still work but layout may differ.
- *   ↓ affects: display.aod, gesture.home, ui.lockscreen (display routing)
- *   ✗ no effect: display.cutout, gesture.back, ui.widget, ime
- *
- * gesture.back ←──── gesture.home ────→ gesture.back
- *   Coupled! Both target the same launcher identity problem:
- *   - gesture.back disables FlipLauncher (com.miui.fliphome)
- *   - gesture.home forces getIsUseMiuiHomeAsDefaultHome→true
- *   If gesture.back=OFF (FlipLauncher active) + gesture.home=ON:
- *     FlipLauncher is default home → conflict with miuihome NavStubView
- *   If gesture.back=ON (FlipLauncher disabled) + gesture.home=OFF:
- *     No default home app → HOME intent may show "choose launcher" dialog
- *   Recommended: keep both ON or both OFF together.
- *
- * display.aod ── depends on ── display.dual
- *   AOD targets displayId from DreamService (outer screen in state=6).
- *   display.dual must be ON for correct display routing.
- *
- * ui.lockscreen ── depends on ── display.dual
- *   LockScreenHook hooks SystemUI which runs on displayId=0 (outer in state=6).
- *   Independent of gesture toggles.
- *
- * display.cutout ── INDEPENDENT ──
- *   Cutout/letterbox hooks operate at WindowManager/framework level.
- *   No dependency on any other toggle.
- *
- * display.fullscreen ── INDEPENDENT ──
- *   Disables MIUI flip size-compat letterbox (MIUI_SIZE_COMPAT_MODE) so apps
- *   fill the whole outer screen. Separate mechanism from the cutout — an app
- *   can have the cutout removed yet still be letterboxed to a fixed aspect
- *   ratio. No dependency on any other toggle.
- *
- * app.continuity ── INDEPENDENT ──
- *   Keeps the running inner-screen app alive on the outer screen when folded
- *   (forces InterceptActivityController.isKeepContinuityInFold gates). Works
- *   at the activity/task level; no dependency on any other toggle.
- *
- * ui.widget ── INDEPENDENT ──
- *   WatchOverlayHook operates in fliphome process only.
- *   No dependency on any other toggle.
- *
- * ui.controlcenter ── INDEPENDENT ──
- *   Control center style restoration targets SystemUI plugin context.
- *   No dependency on any other toggle.
- *
- * ui.recentsmenu ── INDEPENDENT ──
- *   Recents long-press menu targets fliphome recents views.
- *   No dependency on any other toggle.
- *
- * ime ── INDEPENDENT ──
- *   Input method hooks in system_server + Sogou process.
- *   No dependency on any other toggle.
+ * 开关之间已无强耦合：display.dual / gesture.home|back 等「FOUNDATION 耦合」说明
+ * 随对应功能删除一并作废（2026-11-23）。
  */
 object Config {
+    // 只列「当前有消费者」的开关。2026-11-23 清掉了对应功能已删的死开关
+    // (display.dual / app.continuity / gesture.home|back / ui.lockscreen|widget|
+    //  controlcenter|recentsmenu / ime / camera / ui.launcherdensity)。
     private val keys = listOf(
         "persist.flipunlock.enable",
-        "persist.flipunlock.display.dual",
         "persist.flipunlock.display.aod",
         "persist.flipunlock.display.cutout",
         "persist.flipunlock.display.fullscreen",
         "persist.flipunlock.display.immersive",
-        "persist.flipunlock.app.continuity",
-        "persist.flipunlock.gesture.home",
-        "persist.flipunlock.gesture.back",
         "persist.flipunlock.gesture.sf",
         "persist.flipunlock.rotation.fix",
         "persist.flipunlock.wallpaper.fix",
@@ -99,21 +50,15 @@ object Config {
         "persist.flipunlock.display.keepon",
         "persist.flipunlock.display.keepon.block",
         "persist.flipunlock.single_outer",
-        "persist.flipunlock.ui.lockscreen",
-        "persist.flipunlock.ui.widget",
-        "persist.flipunlock.ui.controlcenter",
-        "persist.flipunlock.ui.recentsmenu",
         "persist.flipunlock.ui.qstilemin",
-        "persist.flipunlock.ime",
+        "persist.flipunlock.ui.qspanelwidth",
         "persist.flipunlock.ime.navbar",
-        "persist.flipunlock.camera",
         "persist.flipunlock.camera.fix",
         "persist.flipunlock.volume.keyremap",
         "persist.flipunlock.ui.keyguardfix",
         "persist.flipunlock.ui.flashlight",
         "persist.flipunlock.identity.tinyscreen",
         "persist.flipunlock.settings.imebottom",
-        "persist.flipunlock.ui.launcherdensity",
         "persist.flipunlock.wallpaper.lock",
         "persist.flipunlock.wallpaper.identity",
         "persist.flipunlock.app.intercept",
@@ -126,7 +71,6 @@ object Config {
     val enabled: Boolean get() = raw("persist.flipunlock.enable", true)
 
     // Display
-    val displayDual: Boolean get() = enabled && raw("persist.flipunlock.display.dual", true)
     val displayAod: Boolean get() = enabled && raw("persist.flipunlock.display.aod", true)
     val displayCutout: Boolean get() = enabled && raw("persist.flipunlock.display.cutout", true)
     val displayFullscreen: Boolean get() = enabled && raw("persist.flipunlock.display.fullscreen", true)
@@ -136,7 +80,6 @@ object Config {
     val displayImmersive: Boolean get() = enabled && raw("persist.flipunlock.display.immersive", true)
 
     // App
-    val appContinuity: Boolean get() = enabled && raw("persist.flipunlock.app.continuity", true)
     // AppInterceptUnlock(外屏启动拦截解除, **OS4.0.3+ 新版本专用通道**)开关
     //   2026-11-16 新增: 4.0.3 把 InterceptActivityController 改成由 MiuiStubRegistry.loadJar
     //   从 miui-appcompat.appcontinuity.jar 动态加载(不在主 classpath) → 老的
@@ -158,9 +101,7 @@ object Config {
     //   默认 false（保持既有方形行为）。
     val wallpaperExact: Boolean get() = enabled && raw("persist.flipunlock.wallpaper.exact", false)
 
-    // Gesture — keep together
-    val gestureHome: Boolean get() = enabled && raw("persist.flipunlock.gesture.home", true)
-    val gestureBack: Boolean get() = enabled && raw("persist.flipunlock.gesture.back", true)
+    // Gesture
     // SFDeviceGestureHook(外屏上滑手势执行器)开关
     val gestureSf: Boolean get() = enabled && raw("persist.flipunlock.gesture.sf", true)
     // RotationFixHook(旋转解除)开关
@@ -221,34 +162,16 @@ object Config {
     val imeNavBarFix: Boolean get() = enabled && raw("persist.flipunlock.ime.navbar", true)
 
     // UI
-    val uiLockScreen: Boolean get() = enabled && raw("persist.flipunlock.ui.lockscreen", true)
-    val uiWidget: Boolean get() = enabled && raw("persist.flipunlock.ui.widget", true)
-    val uiControlCenter: Boolean get() = enabled && raw("persist.flipunlock.ui.controlcenter", true)
-    val uiRecentsMenu: Boolean get() = enabled && raw("persist.flipunlock.ui.recentsmenu", true)
     // QSTileMinCountFixHook(控制中心编辑磁贴下限→0)开关
     val qsTileMinCount: Boolean get() = enabled && raw("persist.flipunlock.ui.qstilemin", true)
     // QSPanelWidthFixHook(横屏控制中心面板宽撑满屏幕)开关
     val qsPanelWidth: Boolean get() = enabled && raw("persist.flipunlock.ui.qspanelwidth", true)
 
-    // Other
-    val ime: Boolean get() = enabled && raw("persist.flipunlock.ime", true)
-
-    // Disabled by default — broken / not needed
-    val camera: Boolean get() = enabled && raw("persist.flipunlock.camera", false)
-    val launcherDensity: Boolean get() = enabled && raw("persist.flipunlock.ui.launcherdensity", false)
-
-    /** Print all toggle keys and values, plus coupling warnings. */
+    /** Print all toggle keys and values. */
     fun logConfig() {
         val sb = StringBuilder("═══ FlipOuterUnlock Config ═══\n")
         for (key in keys) {
             sb.append("  $key = ${readProp(key)}\n")
-        }
-        // Coupling warnings
-        if (gestureHome != gestureBack) {
-            sb.append("  ⚠ gesture.home($gestureHome) ≠ gesture.back($gestureBack) — recommended keep together\n")
-        }
-        if (displayAod && !displayDual) {
-            sb.append("  ⚠ display.aod=ON but display.dual=OFF — AOD may route to wrong display\n")
         }
         sb.append("  (getprop | grep persist.flipunlock)")
         log(sb.toString())

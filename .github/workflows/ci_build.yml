@@ -32,7 +32,7 @@ jobs:
           cache-cleanup: on-success
 
       - name: Run lint
-        continue-on-error: true
+        continue-on-error: false
         run: ./gradlew :app:lintDebug --continue
 
   build:

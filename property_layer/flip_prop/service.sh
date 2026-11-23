@@ -20,6 +20,11 @@
 #   persist.flipunlock.provision_skip      (default 1; 0 = leave the setup wizard alone)
 MODDIR=${0%/*}
 LOG=/data/local/tmp/flip_prop_service.log
+# 简单轮转（设备上没有 logrotate）：超过 ~256 KB 就切一份 .1，避免这个文件无限长大。
+if [ -f "$LOG" ]; then
+    sz=$(stat -c %s "$LOG" 2>/dev/null || echo 0)
+    [ "$sz" -gt 262144 ] && mv -f "$LOG" "$LOG.1"
+fi
 exec >> $LOG 2>&1
 echo "=== $(date) flip_prop service start ==="
 
