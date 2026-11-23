@@ -3,6 +3,7 @@ package com.example.flipunlock.hook.camera
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 相机进程内恢复 flip 身份（2026-08-15, 修 flip2 外屏相机倒置 + 3:4 黑边）。
@@ -27,6 +28,9 @@ object CameraFixHook : BaseHook() {
 
     override val targetPackages = listOf("com.android.camera")
 
+    /** 相机进程热路径：命中只记一次，别每次 getInt 都刷 logcat。 */
+    private val loggedOnce = AtomicBoolean(false)
+
     override fun setupHooks(param: PackageReadyParam) {
         val process = currentProcessName()
         if (process != "com.android.camera") {
@@ -47,7 +51,9 @@ object CameraFixHook : BaseHook() {
                 hook(m) { chain ->
                     val key = chain.args[0] as? String
                     if (key == "persist.sys.multi_display_type") {
-                        log("CameraFix: multi_display_type → 4 (flip)")
+                        if (loggedOnce.compareAndSet(false, true)) {
+                            log("CameraFix: multi_display_type → 4 (flip) [后续命中静默]")
+                        }
                         return@hook 4
                     }
                     chain.proceed()

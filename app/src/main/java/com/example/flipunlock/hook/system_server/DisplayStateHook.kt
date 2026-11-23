@@ -13,8 +13,11 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *     其他 state (0 折叠/1 帐篷/2 半开/4 反展...) → 恒 state 0 布局(外屏亮, 内屏 off)
  *   → 半展开/半折叠/折叠时外屏都能亮; 只有全展开才切内屏。
  *
- * getCurrentState 注释(不 hook): 状态保持真实(sensor 驱动), 手电筒等折叠判定
+ * getCurrentState **不 hook**: 状态保持真实(sensor 驱动), 手电筒等折叠判定
  *   消费点由 FlashlightHook 方法级拦截处理; 避免"系统认为双屏"的副作用。
+ *   2026-11-23 (v3.5): 原有一版 `getCurrentState → 6` 的全局 hack 已删除 —— 它让所有
+ *   消费者(方向/continuity/SystemUI)看到"双屏", 而同文件的布局钩子又把布局钉成外屏,
+ *   同一进程里两套判定并存。手电筒提示改由 FlashlightHook 精确拦截。
  *
  * 开关: persist.flipunlock.display.state(默认 true)。
  * 进程: system_server。
@@ -52,16 +55,8 @@ object DisplayStateHook {
                 log("DisplayStateHook: ✓ DeviceStateToLayoutMap.get 按 state 分支(3→原生, 其他→外屏)")
             }.onFailure { log("DisplayStateHook: ① DeviceStateToLayoutMap.get failed: ${it.message}") }
 
-            // ── getCurrentState: 全局返回 6(2026-08-14 实验: 替代 FlashlightHook) ──
-            // 手电筒等 getCurrentState()==0 折叠判定消费点看到 6 → 不提示。
-            // ⚠️ 实验: 影响所有读该值的进程(方向/continuity/SystemUI), 验证后评估去留。
-            runCatching {
-                val cls = param.classLoader.loadClass(
-                    "com.android.server.devicestate.DeviceStateManagerService")
-                val m = cls.method("getCurrentState")
-                hook(m, replaceResult(6))
-                log("DisplayStateHook: ✓ getCurrentState → 6 (全局, 替代 FlashlightHook 实验)")
-            }.onFailure { log("DisplayStateHook: ② getCurrentState failed: ${it.message}") }
+            // ② `getCurrentState → 6` 已在 v3.5 删除（见文件头）。不要再加回来：
+            //    它会让方向/continuity/SystemUI 把设备当"双屏"，和 ① 的外屏布局判定打架。
         }
     }
 }

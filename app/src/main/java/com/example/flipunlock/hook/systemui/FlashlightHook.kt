@@ -1,9 +1,11 @@
 package com.example.flipunlock.hook.systemui
 
 import com.example.flipunlock.hook.BaseHook
+import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.hook
 import com.example.flipunlock.hook.util.log
 import com.example.flipunlock.hook.util.method
+import com.example.flipunlock.hook.util.processClassLoader
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
@@ -28,6 +30,10 @@ object FlashlightHook : BaseHook() {
     override val targetPackages = listOf("android", "com.android.systemui")
 
     override fun setupHooks(param: PackageReadyParam) {
+        if (!Config.flashlightFix) {
+            log("FlashlightHook: DISABLED by persist.flipunlock.ui.flashlight")
+            return
+        }
         if (param.packageName == "android") {
             val proc = currentProcessName()
             if (proc != "com.android.systemui") {
@@ -39,8 +45,11 @@ object FlashlightHook : BaseHook() {
             log("FlashlightHook: setupHooks pkg=${param.packageName}")
         }
 
-        hookSetFlipListening(param.classLoader)
-        hookFlipDialogRunnable(param.classLoader)
+        // 2026-11-23: 必须用 processClassLoader —— pkg=android 回调时 param.classLoader 是
+        // 系统框架，loadClass(MiuiFlashlightControllerImpl) 必然失败（hook 会静默装空）。
+        val cl = processClassLoader(param.classLoader)
+        hookSetFlipListening(cl)
+        hookFlipDialogRunnable(cl)
     }
 
     /**

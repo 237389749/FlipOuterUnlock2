@@ -36,7 +36,8 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *         只有显式 sensor 类 {4,6,7,10}(sensorLandscape/sensorPortrait/fullSensor 等)走传感器
  *       → 现象 = 同一软件: 显式 sensor 页面能转, 默认/user/portrait 页面锁死
  *         (⑤⑥ 层把 portrait→12 后 12 也被 mUserRotationMode==1 锁死 → "⑤⑥已实现仍部分锁"的真相)
- *     修复: ⑦-A updateRotationMode()→no-op(防系统写坏 settings)
+ *     修复: ⑦-A（v3.5 删除: 不再 no-op, 让它跑; 其内部 setUserRotation 由 ⑦-② 改写成 FREE,
+ *               这样 settings 得到同步而不是被断链）
  *           ⑦-B setUserRotationWhenSwitchUser()→no-op(防用户切换写坏)
  *           ⑦-C setUserRotation(3参) 所有 caller LOCKED→FREE(2026-08-21 起放弃磁贴,
  *               用户决策: 以放弃"锁定方向"磁贴为代价换全应用可旋转; 不再区分 SoSc 磁贴 caller)
@@ -171,17 +172,14 @@ object RotationFixHook {
                 log("RotationFix: ✓ hooked setUserRotationForFold [enable→false]")
             }.onFailure { log("RotationFix: ⑦-G setUserRotationForFold failed: ${it.message}") }
 
-            // ── ⑦-A DisplayRotationStubImpl.updateRotationMode() → no-op ──
-            // 属性1下 mUserRotationModeOuter=1(LOCKED, 构造:78), MiuiSettingsObserver.observe(658)/
-            // onChange(663) → updateRotationMode → setUserRotation(1,rot)(260) → 写 settings
-            // accelerometer_rotation=0 → DisplayRotation.updateSettings 读到 1(LOCKED) → 901/908
-            // 锁死所有非显式 sensor 页面。no-op 断掉这条"系统误锁"源头。
-            // 属性4下 mUserRotationModeOuter=0(FREE), no-op 无副作用(settings 本就不被写坏)。
-            runCatching {
-                val cls = param.classLoader.loadClass("com.android.server.wm.DisplayRotationStubImpl")
-                hook(cls.method("updateRotationMode"), replaceResult(Unit))
-                log("RotationFix: ✓ updateRotationMode → no-op (防系统误锁 settings)")
-            }.onFailure { log("RotationFix: ⑦-A updateRotationMode failed: ${it.message}") }
+            // ── ⑦-A（v3.5 删除）──────────────────────────────────────────────
+            // 原实现把 `DisplayRotationStubImpl.updateRotationMode()` 整体 replaceResult(Unit)，
+            // 断了"系统误锁 settings"的源头，但**连带掐掉 `updateOutInnerRotationMode()` 的
+            // 内外屏 settings 同步**，`isRotationLocked()` 读到过期值。
+            // 现在不再 no-op：让它照常跑，它内部调 `setUserRotation(1, rot)` 会被 ⑦-②（上面
+            // LOCKED→FREE 改写）转成 `(0, rot)`，于是 settings 被同步成 **FREE**，既不断链也不误锁。
+            // ⑦-D（updateSettings after 强制 mUserRotationMode=0）与 ⑦-E（最终裁决层）仍是兜底。
+            log("RotationFix: ⑦-A 不再 no-op（交给 ⑦-② 把 LOCKED→FREE 后再写 settings）")
 
             // ── ⑦-B DisplayRotationStubImpl.setUserRotationWhenSwitchUser() → no-op ──
             // 用户切换时 updateOutInnerRotationMode(把 mUserRotationModeOuter=1 同步进 settings)

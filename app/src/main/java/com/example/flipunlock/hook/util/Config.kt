@@ -110,6 +110,7 @@ object Config {
         "persist.flipunlock.camera.fix",
         "persist.flipunlock.volume.keyremap",
         "persist.flipunlock.ui.keyguardfix",
+        "persist.flipunlock.ui.flashlight",
         "persist.flipunlock.identity.tinyscreen",
         "persist.flipunlock.settings.imebottom",
         "persist.flipunlock.ui.launcherdensity",
@@ -197,6 +198,9 @@ object Config {
     val volumeKeyRemap: Boolean get() = enabled && raw("persist.flipunlock.volume.keyremap", true)
     // SystemUiKeyguardFix(崩溃环兜底)开关 — 默认 true; 关闭注意 systemui 崩溃环风险
     val keyguardFix: Boolean get() = enabled && raw("persist.flipunlock.ui.keyguardfix", true)
+    // FlashlightHook(外屏手电筒"翻转提示"直通: setFlipListening→直接开关 + 跳过提示弹窗)开关
+    //   2026-11-23 从「观察一期」转正: 它取代了 DisplayStateHook 里 getCurrentState→6 的全局 hack
+    val flashlightFix: Boolean get() = enabled && raw("persist.flipunlock.ui.flashlight", true)
     // TinyScreenFixHook(属性层死角: getScreenType/isTinyScreen→false)开关
     val tinyScreenFix: Boolean get() = enabled && raw("persist.flipunlock.identity.tinyscreen", true)
     // LockWallpaperFixHook(锁屏壁纸被 ambient 隐藏 → 强制不隐藏)开关

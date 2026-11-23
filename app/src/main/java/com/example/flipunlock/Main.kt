@@ -3,7 +3,6 @@ package com.example.flipunlock
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.blur.BlurProbe
 import com.example.flipunlock.hook.aod.AodHook
-import com.example.flipunlock.hook.identity.CameraCutoutFixHook
 import com.example.flipunlock.hook.identity.TinyScreenFixHook
 import com.example.flipunlock.hook.ime.ImeNavBarFixHook
 import com.example.flipunlock.hook.miuihome.SFDeviceGestureHook
@@ -22,9 +21,7 @@ import com.example.flipunlock.hook.system_server.VolumeKeyRemapFixHook
 import com.example.flipunlock.hook.system_server.WallpaperFixHook
 import com.example.flipunlock.hook.system_server.LockWallpaperFixHook
 import com.example.flipunlock.hook.camera.CameraFixHook
-// import com.example.flipunlock.hook.systemui.FlashlightHook          // [2026-08-15 注释] 最小集合实验
-// import com.example.flipunlock.hook.systemui.NotifFlipTipFixHook     // [2026-08-15 注释] 最小集合实验
-// import com.example.flipunlock.hook.systemui.NotifModalFixHook       // [2026-08-15 注释] 最小集合实验
+import com.example.flipunlock.hook.systemui.FlashlightHook
 import com.example.flipunlock.hook.systemui.QSTileMinCountFixHook
 import com.example.flipunlock.hook.systemui.QSPanelWidthFixHook
 import com.example.flipunlock.hook.systemui.SystemUiKeyguardFix
@@ -58,15 +55,17 @@ class Main : XposedModule() {
         SystemUiKeyguardFix,            // systemui 崩溃环兜底: providesTinyKeyguardViewPager 强制 inflate(Lite, flip1 only)
         QSTileMinCountFixHook,          // 控制中心编辑磁贴下限解除(12→4) [2026-08-22 v8: 保险6 插件路径 QSRecord.setRemovable→proceed(true) + 保险7/8 Compose 判定与写库拦截]
         QSPanelWidthFixHook,            // 横屏控制中心磁贴布局撑满屏幕宽度 [2026-08-22: hook MainPanelController.updatePanelWidth, HORIZONTAL→(屏宽-中缝)/2]
+        FlashlightHook,                 // 外屏手电筒: 跳过"翻开手机"提示, 磁贴直接开关 [2026-11-23 从观察一期转正; 取代 DisplayStateHook 的 getCurrentState→6 全局 hack]
         AodHook,                        // AOD 外屏显示(flip1 only; 内部 gate: flip2 SKIP) [2026-08-15 恢复]
         TinyScreenFixHook,              // 属性层死角: getScreenType→0 + isTinyScreen/isFlipTinyScreen→false(修 TIM 通知弹提示)
         ImeBottomSupportHook,           // 设置「全面屏键盘优化」入口: 国际版 IS_INTERNATIONAL_BUILD 硬隐藏解除(scope 需含 com.android.settings)
         ImeNavBarFixHook,               // 输入法底部 48dp 导航栏(⌄/🌐)→高度 0 (scope 需含输入法包)
         CameraFixHook,                  // 相机进程内 multi_display_type→4: 修 flip 外屏相机倒置+黑边(属性1副作用) [2026-08-15 恢复, flip1/2 通用]
         WallpaperIdentityFix,           // 壁纸引擎进程内 multi_display_type→4 + which 全集: 修属性1下 miwallpaper 每10s NPE 崩溃环 [2026-11-16 新增, scope 需含 com.miui.miwallpaper]
-        // 以下为「观察一期」, 文件暂留、未注册(见 refMD Unlock2_Prune_PropertyLayer.md §3):
-        // FlashlightHook, SogouInputHook, ControlCenterHook, NotifModalFixHook, NotifFlipTipFixHook,
-        // FlashlightStateHook, CameraCutoutFixHook
+        // 「观察一期」2026-11-23 已收口（见 refMD Unlock2_Prune_PropertyLayer.md §3）：
+        //   FlashlightHook 转正注册（上面）；ControlCenterHook / SogouInputHook /
+        //   NotifModalFix / NotifFlipTipFix / CameraCutoutFix / FlashlightStateHook
+        //   已 git rm（都未注册，功能分别由 QSTile+QSPanel / 属性 1 原生 / CutoutRemove.hookApp 覆盖）。
     )
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {

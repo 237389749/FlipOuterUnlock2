@@ -56,7 +56,10 @@ object ImmersiveStatusBar {
     private var hideTypesField: Field? = null
     private var displayIdMethod: Method? = null
     private var displayContentField: Field? = null
-    private var applied = false
+
+    /** 上一次观察到的 mHidingPermanentInsetsTypes（-1 = 还没看过）。只用于"值变化才打日志"。 */
+    @Volatile
+    private var lastSeenTypes = -1
 
     fun hook(param: SystemServerStartingParam) {
         if (!Config.displayImmersive) {
@@ -95,16 +98,21 @@ object ImmersiveStatusBar {
 
         val current = f.getInt(policy)
         val wanted = current or WindowInsets.Type.statusBars()
-        if (wanted != current) {
-            f.setInt(policy, wanted)
-            log(
-                "ImmersiveStatusBar: display $OUTER_DISPLAY force-hide statusBars " +
-                    "(mHidingPermanentInsetsTypes 0x${Integer.toHexString(current)} → 0x${Integer.toHexString(wanted)})"
-            )
-            applied = true
-        } else if (!applied) {
-            log("ImmersiveStatusBar: already hidden by policy (mHidingPermanentInsetsTypes=0x${Integer.toHexString(current)})")
-            applied = true
+        // 幂等 re-assert：框架的 updateSystemBarVisibilityOverride() 会把字段清零重算，
+        // 所以每次进 updateSystemBarsLw 都要补一次。补之前的值只用来判断"是否真的变化"，
+        // 避免每次调用都打一行（原来字段被反复清零时会刷屏）。
+        if (wanted != current) f.setInt(policy, wanted)
+        if (current != lastSeenTypes) {
+            lastSeenTypes = current
+            if (wanted != current) {
+                log(
+                    "ImmersiveStatusBar: display $OUTER_DISPLAY force-hide statusBars " +
+                        "(mHidingPermanentInsetsTypes 0x${Integer.toHexString(current)} → " +
+                        "0x${Integer.toHexString(wanted)})"
+                )
+            } else {
+                log("ImmersiveStatusBar: already hidden by policy (mHidingPermanentInsetsTypes=0x${Integer.toHexString(current)})")
+            }
         }
     }
 

@@ -16,18 +16,26 @@
 # Switches:
 #   persist.flipunlock.single_outer        (written here; 1 = inner panel removed)
 #   persist.flipunlock.outer.force_closed  (default 1; 0 = let DisplayStateHook do it)
+#   persist.flipunlock.outer.pin_rotation  (default 1; 0 = don't touch rotation settings)
+#   persist.flipunlock.provision_skip      (default 1; 0 = leave the setup wizard alone)
 MODDIR=${0%/*}
 LOG=/data/local/tmp/flip_prop_service.log
 exec >> $LOG 2>&1
 echo "=== $(date) flip_prop service start ==="
 
 # ---- 1. provision skip -------------------------------------------------------
-PROVISIONED=$(settings get global device_provisioned 2>/dev/null)
-if [ "$PROVISIONED" != "1" ]; then
-    settings put global device_provisioned 1
-    settings put secure user_setup_complete 1
-    echo "provision skipped (was '$PROVISIONED')"
-    log -t flip_prop "provision skipped"
+# 开关: persist.flipunlock.provision_skip (默认 1)。设 0 = 完全不动 settings，
+# 恢复出厂后自己走完向导（想保留"新机开箱"流程时用）。
+if [ "$(getprop persist.flipunlock.provision_skip 1)" = "1" ]; then
+    PROVISIONED=$(settings get global device_provisioned 2>/dev/null)
+    if [ "$PROVISIONED" != "1" ]; then
+        settings put global device_provisioned 1
+        settings put secure user_setup_complete 1
+        echo "provision skipped (was '$PROVISIONED')"
+        log -t flip_prop "provision skipped"
+    fi
+else
+    echo "provision skip disabled by persist.flipunlock.provision_skip=0"
 fi
 
 # ---- 2. LSP guard ------------------------------------------------------------
@@ -89,12 +97,17 @@ if [ "$(getprop ro.product.device)" = "bixi" ]; then
         echo "state_after=$(cmd device_state state 2>&1 | head -1)"
 
         # property 1: outer panel is a presentation display -> WMS gives ROTATION_90
-        if [ "$(getprop persist.sys.multi_display_type)" = "1" ]; then
+        # 开关: persist.flipunlock.outer.pin_rotation (默认 1)。设 0 = 不钉旋转
+        # （uninstall.sh 会把 accelerometer_rotation/user_rotation 与 wm 设置放回去）。
+        if [ "$(getprop persist.sys.multi_display_type)" = "1" ] &&
+           [ "$(getprop persist.flipunlock.outer.pin_rotation 1)" = "1" ]; then
             settings put system accelerometer_rotation 0
             settings put system user_rotation 0
             wm user-rotation lock 0
             wm fixed-to-user-rotation enabled
             echo "rotation pinned: $(dumpsys window 2>/dev/null | grep -m1 'mRotation=')"
+        elif [ "$(getprop persist.flipunlock.outer.pin_rotation 1)" != "1" ]; then
+            echo "rotation pin disabled by persist.flipunlock.outer.pin_rotation=0"
         fi
         echo "display0=$(dumpsys display 2>/dev/null | grep -A1 'mDisplayId=0$' | tr '\n' ' ')"
         echo "oops=$(dmesg | grep -c 'Internal error')"

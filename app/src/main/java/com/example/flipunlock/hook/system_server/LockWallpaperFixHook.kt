@@ -2,6 +2,7 @@ package com.example.flipunlock.hook.system_server
 
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 锁屏壁纸不再被 ambient 隐藏（2026-09-24 新增，refMD §44.12）。
@@ -56,6 +57,9 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  */
 object LockWallpaperFixHook {
 
+    /** DozeMachine 每 ~1.1s 一轮，setInAmbientMode(true) 会反复命中 —— 只记第一次。 */
+    private val loggedOnce = AtomicBoolean(false)
+
     fun hook(param: SystemServerStartingParam) {
         if (!Config.lockWallpaperFix) {
             log("LockWallpaperFix: DISABLED by persist.flipunlock.wallpaper.lock")
@@ -74,7 +78,9 @@ object LockWallpaperFixHook {
             hook(method) { chain ->
                 val inAmbient = chain.args[0] as? Boolean ?: false
                 if (inAmbient) {
-                    log("LockWallpaperFix: ✓ setInAmbientMode(true) → false (锁屏壁纸不再被隐藏)")
+                    if (loggedOnce.compareAndSet(false, true)) {
+                        log("LockWallpaperFix: ✓ setInAmbientMode(true) → false (锁屏壁纸不再被隐藏) [后续静默]")
+                    }
                     chain.proceed(arrayOf<Any?>(false, 0L))
                 } else {
                     chain.proceed()
