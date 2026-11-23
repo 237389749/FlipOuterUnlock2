@@ -173,21 +173,27 @@ object QSTileMinCountFixHook : BaseHook() {
         }
 
         // ── 保险 1: Resources.getInteger → MIN_TILES(4) ──
+        // 这是**进程级** hook（SystemUI 里所有 getInteger 都过它），而 getResourceName 是最慢的
+        // API 之一。按 id 缓存判定结果：每个 id 只查一次名字，之后只做一次 map 查表。
         safeHook("QSTileMinCountFix.1") {
             runCatching {
                 val resClass = cl.loadClass("android.content.res.Resources")
                 val method = resClass.method("getInteger", Int::class.javaPrimitiveType!!)
+                val minTilesIds = java.util.concurrent.ConcurrentHashMap<Int, Boolean>()
                 hook(method) { chain ->
                     val res = chain.thisObject as? Resources ?: return@hook chain.proceed()
                     val id = chain.args[0] as? Int ?: return@hook chain.proceed()
-                    val name = runCatching { res.getResourceName(id) }.getOrNull()
-                    if (name != null && name.endsWith("quick_settings_min_num_tiles")) {
-                        log("QSTileMinCountFix: 保险1 $name -> $MIN_TILES")
+                    val isMinTiles = minTilesIds.getOrPut(id) {
+                        runCatching { res.getResourceName(id)?.endsWith("quick_settings_min_num_tiles") == true }
+                            .getOrDefault(false)
+                    }
+                    if (isMinTiles) {
+                        log("QSTileMinCountFix: 保险1 getInteger(id=0x${Integer.toHexString(id)}) → $MIN_TILES")
                         return@hook MIN_TILES
                     }
                     chain.proceed()
                 }
-                log("QSTileMinCountFix: ✓ 保险1 Resources.getInteger hooked")
+                log("QSTileMinCountFix: ✓ 保险1 Resources.getInteger hooked (id 判定已缓存)")
             }.onFailure { log("QSTileMinCountFix: 保险1 failed: ${it.message}") }
         }
 
