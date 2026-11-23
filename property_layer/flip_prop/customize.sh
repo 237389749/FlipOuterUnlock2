@@ -24,9 +24,23 @@ case "$DEV" in
     *)     ui_print "  [FlipUnlock] WARNING: unknown device, continuing anyway" ;;
 esac
 
+# ── 2026-11-23: 保护已有的 patched ko ────────────────────────────────────────
+# CI 出的 zip 里没有 payload（.ko 是 ROM 相关产物，不进仓库），而 KernelSU 安装时
+# 会用新目录替换旧模块。直接覆盖安装会把设备上那份能用的 ko 冲掉 -> 触摸补丁静默跳过
+# -> 息屏 63s 硬复位复活。这里在安装阶段把旧模块里的 payload 继承过来。
+OLD=/data/adb/modules/flipunlock_prop
+for f in synaptics_tcm2_patched.ko; do
+    if [ ! -f "$MODPATH/$f" ] && [ -f "$OLD/$f" ]; then
+        cp -f "$OLD/$f" "$MODPATH/$f"
+        ui_print "  [FlipUnlock] carried over existing $f from the installed module"
+    fi
+done
+
 if [ "$DEV" = "bixi" ] && [ ! -f "$MODPATH/synaptics_tcm2_patched.ko" ]; then
-    ui_print "  [FlipUnlock] NOTE: synaptics_tcm2_patched.ko missing in the zip"
+    ui_print "  [FlipUnlock] NOTE: synaptics_tcm2_patched.ko missing (zip has no payload,"
+    ui_print "            and none could be carried over)"
     ui_print "            -> inner-screen-removed hard reset is NOT fixed"
+    ui_print "            -> push a patched ko into $MODPATH before rebooting"
 fi
 
 ui_print "  [FlipUnlock] install ok"
