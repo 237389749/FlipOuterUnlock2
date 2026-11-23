@@ -229,16 +229,20 @@ object QSTileMinCountFixHook : BaseHook() {
                         continue
                     }
                 val ctor = runCatching { cls.declaredConstructors.firstOrNull() }.getOrNull() ?: continue
-                hook(ctor, after { chain, _ ->
+                hook(ctor, after { chain, result ->
+                    // 注意: after 块里 chain.proceed() 会**再执行一遍构造器**（after 的返回值才是结果）。
+                    // 早期版本在解析失败分支 return@after chain.proceed()，等于每次构造都跑两遍；
+                    // 这里改为 runCatching 内提前返回、统一回传原始 result。
                     runCatching {
-                        val actions = field.get(chain.thisObject) ?: return@after chain.proceed()
+                        val actions = field.get(chain.thisObject) ?: return@runCatching
                         val add = actions.javaClass.method("add", Any::class.java)
                         val removeEnum = runCatching {
                             actions.javaClass.classLoader.loadClass(actionsClsName).field("REMOVE").get(null)
-                        }.getOrNull() ?: return@after chain.proceed()
+                        }.getOrNull() ?: return@runCatching
                         add.invoke(actions, removeEnum)
                         log("QSTileMinCountFix: 保险4 ✓ ${cls.name}.<init> → availableEditActions+REMOVE")
                     }.onFailure { log("QSTileMinCountFix: 保险4 $candidate failed: ${it.message}") }
+                    result
                 })
                 log("QSTileMinCountFix: 保险4 hooked ${cls.name}")
             }

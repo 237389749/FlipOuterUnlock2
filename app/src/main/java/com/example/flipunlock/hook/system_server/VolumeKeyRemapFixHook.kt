@@ -1,6 +1,9 @@
 package com.example.flipunlock.hook.system_server
 
 import android.content.Context
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Process
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 
@@ -44,7 +47,10 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  * ⑥ 裁决层: fold 以本 hook 观测到的真实状态为准（不再用国际版恒 false 的 isDeviceStateFolded）
  * ③④②⑤ 保留为状态同步/兜底; ⑤②不再硬编码 fold=true（展开态开机会错误 remap）
  * ⑩ 旋转兜底: `DisplayRotation.updateRotationUnchecked` after 读 `mRotation`(displayId==0),
- *    变化时用当前 fold 驱动一次（补上 MiInputKeyRemap 自带 RotationWatcher 未注册的场景）
+ *    变化时用当前 fold 驱动一次（补上 MiInputKeyRemap 自带 RotationWatcher 未注册的场景）。
+ *    **v3.3**: 该回调在 WMS `mGlobalLock` 内，原先就地反射调 `handleVolumeKeyRemap`
+ *    （拿 IM 锁 + binder）有锁序反转风险；现在只记 pending，投递到独立 HandlerThread、
+ *    120 ms 去抖后再驱动。`drive()` 同时拒绝 rotation<0（不再把 -1 喂给 remap）。
  *
  * ── 验证方法（本机 system_server 模块日志读不到, 用 MIUI 自己的输入日志）──
  * `adb shell logcat -d -s MiuiInputKeyEventLog`（`MiuiInputLog` 用 Slog.w/i, 不受调试等级影响）:
@@ -76,6 +82,28 @@ object VolumeKeyRemapFixHook {
 
     /** 最近一次已知旋转（0/1/2/3; 1、3 = 横屏）。 */
     @Volatile private var rotationState: Int = -1
+
+    /**
+     * ⑩ 的延迟驱动队列。
+     *
+     * `DisplayRotation.updateRotationUnchecked` 在 WMS `mGlobalLock` 内执行；在它的 after 里
+     * 直接反射调 `MiInputKeyRemap.handleVolumeKeyRemap`（会拿 IM 锁 + 走 binder）就是
+     * 「持 WMS 锁拿 IM 锁」的锁序反转风险。这里改成投递到独立线程，等 hook 返回、锁释放后再跑；
+     * 旋转过程会连续回调，所以做 120 ms 去抖 + 只保留最后一个 rotation。
+     */
+    private val driveThread by lazy {
+        HandlerThread("FlipVolumeRemap", Process.THREAD_PRIORITY_BACKGROUND).apply { start() }
+    }
+    private val driveHandler by lazy { Handler(driveThread.looper) }
+
+    @Volatile private var pendingRotation: Int = -1
+
+    private val drivePending = Runnable {
+        val rot = pendingRotation
+        if (rot < 0 || rot == rotationState) return@Runnable
+        val fold = foldState ?: policyFold() ?: return@Runnable
+        drive(fold, rot)
+    }
 
     fun hook(param: SystemServerStartingParam) {
         if (!Config.volumeKeyRemap) return
@@ -203,6 +231,7 @@ object VolumeKeyRemapFixHook {
         }.onFailure { log("VolumeKeyRemapFix ⑤ failed: ${it.message}") }
 
         // ── ⑩ 旋转兜底: DisplayRotation.updateRotationUnchecked after（displayId==0）──
+        //    ⚠️ 该回调在 WMS mGlobalLock 内，不能就地 drive()；只记 pending，交给独立线程。
         runCatching {
             val cls = loadClass(param, CLS_DISPLAY_ROTATION) ?: error("$CLS_DISPLAY_ROTATION 不可加载")
             hook(cls.method("updateRotationUnchecked", Boolean::class.javaPrimitiveType!!), after { chain, result ->
@@ -213,12 +242,13 @@ object VolumeKeyRemapFixHook {
                 if (displayId != 0) return@after result
                 val rotation = runCatching { inst.getField("mRotation") as? Int }.getOrNull()
                     ?: return@after result
-                if (rotation == rotationState) return@after result
-                val fold = foldState ?: policyFold() ?: return@after result
-                drive(fold, rotation)
+                if (rotation < 0 || rotation == rotationState) return@after result
+                pendingRotation = rotation
+                driveHandler.removeCallbacks(drivePending)
+                driveHandler.postDelayed(drivePending, 120)
                 result
             })
-            log("VolumeKeyRemapFix: ✓ ⑩ DisplayRotation.updateRotationUnchecked after(rotation 兜底)")
+            log("VolumeKeyRemapFix: ✓ ⑩ DisplayRotation.updateRotationUnchecked after(rotation 兜底, 出锁后驱动)")
         }.onFailure { log("VolumeKeyRemapFix ⑩ failed: ${it.message}") }
     }
 
@@ -251,7 +281,8 @@ object VolumeKeyRemapFixHook {
     /** 记录状态并驱动 MiInputKeyRemap.handleVolumeKeyRemap(fold, rotation)。 */
     private fun drive(fold: Boolean, rotation: Int) {
         foldState = fold
-        if (rotation >= 0) rotationState = rotation
+        if (rotation < 0) return          // rotation 未知时不要拿 -1 去 remap（会把方向改错）
+        rotationState = rotation
         val inst = mirkInstance ?: return
         runCatching {
             val m = inst.javaClass.method("handleVolumeKeyRemap",
