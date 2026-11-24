@@ -23,10 +23,14 @@ resetprop -n vendor.display.enable_allow_idle_fallback 1
 # drop the single-outer-screen switches instead of "setting them to the default":
 # a leftover single_outer=1 keeps unlock2 in single-outer mode (rotation lock,
 # forced CLOSED) after the user thought everything was removed.
-resetprop --delete persist.flipunlock.single_outer 2>/dev/null
-resetprop --delete persist.flipunlock.outer.force_closed 2>/dev/null
-resetprop --delete persist.flipunlock.outer.disable_inner 2>/dev/null
-resetprop --delete persist.flipunlock.touchpatch.status 2>/dev/null
+# 2026-11-24: `resetprop --delete` alone only clears the in-memory copy -- the
+# value comes back on the next boot from /data/property/persistent_properties
+# (measured: force_closed/immersive came back after a reboot). Need -p so the
+# persistent store is cleared too.
+resetprop -p --delete persist.flipunlock.single_outer 2>/dev/null
+resetprop -p --delete persist.flipunlock.outer.force_closed 2>/dev/null
+resetprop -p --delete persist.flipunlock.outer.disable_inner 2>/dev/null
+resetprop -p --delete persist.flipunlock.touchpatch.status 2>/dev/null
 
 # display layout override: without this the phantom second display stays
 # disabled across the uninstall (the file lives in /data, not in the module).

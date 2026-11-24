@@ -131,13 +131,20 @@ if [ "$(getprop ro.product.device)" = "bixi" ]; then
     fi
 
     if [ "$SINGLE_OUTER" = "1" ] && [ "$(getprop persist.flipunlock.outer.force_closed 1)" = "1" ]; then
-        while :; do
-            up=$(cut -d. -f1 /proc/uptime)
-            [ "$up" -ge 60 ] && break
+        # 2026-11-24: 原来是"死等 uptime ≥ 60 再切"。那是布局表还没修好时（state 2 会指到内屏、
+        # 首帧黑屏）的保险。现在 outer_only 布局表把每个 state 都映射到外屏，拓扑不再依赖时序
+        # （实测：停在 HALF_OPENED 也能正常出图、旋转正常），所以改成"尽快切 + 失败重试"，
+        # 把生效窗口从 60s 压到个位数秒。
+        i=0
+        while [ "$i" -lt 20 ]; do
+            i=$((i + 1))
+            if cmd device_state state 0 >/dev/null 2>&1; then
+                echo "switch CLOSED at uptime=$(cut -d. -f1 /proc/uptime) try=$i"
+                break
+            fi
+            echo "switch CLOSED retry $i at uptime=$(cut -d. -f1 /proc/uptime)"
             sleep 2
         done
-        echo "switch CLOSED at uptime=$(cut -d. -f1 /proc/uptime) state_now=$(cmd device_state state 2>&1 | head -1)"
-        cmd device_state state 0
         sleep 3
         echo "state_after=$(cmd device_state state 2>&1 | head -1)"
 
