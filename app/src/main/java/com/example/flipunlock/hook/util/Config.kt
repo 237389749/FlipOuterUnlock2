@@ -42,6 +42,7 @@ object Config {
         "persist.flipunlock.display.cutout",
         "persist.flipunlock.display.fullscreen",
         "persist.flipunlock.display.immersive",
+        "persist.flipunlock.display.state",
         "persist.flipunlock.gesture.sf",
         "persist.flipunlock.rotation.fix",
         "persist.flipunlock.wallpaper.fix",
@@ -74,6 +75,10 @@ object Config {
     //   2026-11-23 用户定案：外屏高度宝贵，状态栏默认隐藏；下拉通知栏、顶部下滑临时呼出都保留。
     //   实现走 DisplayPolicy 的 forced-hide 通道（ImmersiveStatusBar.kt），不碰 policy_control。
     val displayImmersive: Boolean get() = enabled && raw("persist.flipunlock.display.immersive", true)
+    // DisplayStateHook(按 device_state 分发布局)开关
+    //   2026-11-24: 幽灵屏由 flip_prop 的布局表关掉后, 本 hook 对正常路径(CLOSED)已冗余,
+    //   但 state 3(OPENED) 没有它会把锁屏/桌面渲染成放大版 -> 保留。
+    val displayState: Boolean get() = enabled && raw("persist.flipunlock.display.state", true)
 
     // App
     // AppInterceptUnlock(外屏启动拦截解除, **OS4.0.3+ 新版本专用通道**)开关
