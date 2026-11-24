@@ -13,6 +13,7 @@ import com.example.flipunlock.hook.system_server.AppInterceptUnlock
 import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.system_server.ImmersiveStatusBar
 import com.example.flipunlock.hook.system_server.Flip1OuterCutoutHook
+import com.example.flipunlock.hook.system_server.PackageInstallerSwap
 import com.example.flipunlock.hook.system_server.DisplayStateHook
 import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
@@ -100,6 +101,7 @@ class Main : XposedModule() {
         // 2026-11-24: 保留 ! v3.8 曾与 DisplayKeepOnHook 一起退役, 实测 state 3(OPENED)
         // 会渲染成放大版(两次独立启动帧哈希相同), 恢复后正常; 见 refMD §44.17。
         DisplayStateHook.hook(param)
+        PackageInstallerSwap.hook(param)   // [2026-11-25] 默认安装器换 AOSP: 状态层 + 路由层 (find/installer_swap_spec.md)
         ImmersiveStatusBar.hook(param)       // [2026-11-23] 外屏默认沉浸: 状态栏 114px 让给应用(forced-hide 通道)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
         RotationFixHook.hook(param)        // 旋转解除(Lite 移植): MiuiOrientationImpl 折叠态开放旋转

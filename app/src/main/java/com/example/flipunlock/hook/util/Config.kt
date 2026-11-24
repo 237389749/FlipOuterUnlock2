@@ -59,6 +59,7 @@ object Config {
         "persist.flipunlock.wallpaper.lock",
         "persist.flipunlock.wallpaper.identity",
         "persist.flipunlock.app.intercept",
+        "persist.flipunlock.installer.swap",
         "persist.flipunlock.blur.probe",
         "persist.flipunlock.blur.stab",
         "persist.flipunlock.wallpaper.exact",
@@ -92,6 +93,12 @@ object Config {
     //     真正需要它的是 **NoProp（属性 4，合盖时 sFolded=true）**，那边是常开。
     //     留着这条通道只是为了「身份回到 4」时能一键打开。
     val appIntercept: Boolean get() = enabled && raw("persist.flipunlock.app.intercept", false)
+    // PackageInstallerSwap（系统默认安装器从 MIUI 版换成 AOSP 版）开关
+    //   2026-11-25 新增: MIUI 安装器 coreApp+required 双堵，pm 卸不掉也禁不掉；
+    //   本 hook 复刻 CTS 分支的效果（AOSP installed=true / MIUI 摘表 / required 字段挪走）
+    //   + 路由层重解析。默认 **true**；设 false = 完全原生（重启生效）。
+    //   规格：find/installer_swap_spec.md
+    val installerSwap: Boolean get() = enabled && raw("persist.flipunlock.installer.swap", true)
     // BlurProbe(模糊下发探针)开关 — 只统计+限流打印, 不改行为。默认 true(refMD §44.13 排查用)
     val blurProbe: Boolean get() = enabled && raw("persist.flipunlock.blur.probe", true)
     // BlurProbe 去重(stab)开关 — 同一 View 半径没变就不重复下发 setMiSelfBlur。
