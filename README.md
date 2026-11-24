@@ -19,7 +19,6 @@
 **Display & Cutout** (system_server)
 - Remove cutout — `CutoutSpecification.Parser` zeroing (flip2 only; flip1 covered by property layer) + camera-process non-null cutout defense
 - Letterbox exemption — `Flip2CutoutLetterboxHook` (flip2 only)
-- Display state routing — `DisplayStateHook`: state 3 (fully open) → native inner layout; all other states → outer screen on (0/1/2/4...)
 
 **Fullscreen & Rotation** (system_server)
 - Force fullscreen — disable MIUI flip size-compat letterbox (`AppFullscreen`)
@@ -56,7 +55,6 @@
 onSystemServerStarting (system_server):
 ├── CutoutRemove              (flip2)          ← remove cutout + camera defense
 ├── Flip2CutoutLetterboxHook  (flip2)          ← letterbox exemption
-├── DisplayStateHook                          ← display-state branch (outer on unless fully open)
 ├── AppFullscreen                             ← size-compat disable
 ├── RotationFixHook                           ← rotation unlock (multi-layer)
 ├── VolumeKeyRemapFixHook                     ← volume key follows rotation
@@ -100,7 +98,6 @@ reboot
 | `persist.flipunlock.enable` | true | **Master kill switch** |
 | `persist.flipunlock.display.cutout` | true | Remove cutout (flip2) |
 | `persist.flipunlock.display.fullscreen` | true | Force fullscreen |
-| `persist.flipunlock.display.state` | true | DisplayStateHook |
 | `persist.flipunlock.display.aod` | true | Outer-screen AOD |
 | `persist.flipunlock.rotation.fix` | true | Rotation unlock |
 | `persist.flipunlock.volume.keyremap` | true | Volume key rotation direction |
@@ -158,7 +155,6 @@ AGPL-3.0
 **显示与挖孔**（system_server）
 - 移除挖孔 — `CutoutSpecification.Parser` 清零（flip2；flip1 由属性层覆盖）+ camera 进程非 null cutout 防御
 - letterbox 豁免 — `Flip2CutoutLetterboxHook`（flip2）
-- 显示状态路由 — `DisplayStateHook`：全展开(state 3)走原生内屏布局，其余状态(0/1/2/4…)外屏亮
 
 **全屏与旋转**（system_server）
 - 强制全屏 — 禁用 MIUI flip size-compat letterbox（`AppFullscreen`）
@@ -195,7 +191,6 @@ AGPL-3.0
 onSystemServerStarting (system_server):
 ├── CutoutRemove              (flip2)          ← 去挖孔 + camera 防御
 ├── Flip2CutoutLetterboxHook  (flip2)          ← letterbox 豁免
-├── DisplayStateHook                          ← 按 state 分支外屏亮
 ├── AppFullscreen                             ← size-compat 禁用
 ├── RotationFixHook                           ← 旋转解锁（多层）
 ├── VolumeKeyRemapFixHook                     ← 音量键跟随旋转
@@ -239,7 +234,6 @@ reboot
 | `persist.flipunlock.enable` | true | **总开关** |
 | `persist.flipunlock.display.cutout` | true | 去挖孔（flip2） |
 | `persist.flipunlock.display.fullscreen` | true | 强制全屏 |
-| `persist.flipunlock.display.state` | true | DisplayStateHook |
 | `persist.flipunlock.display.aod` | true | 外屏 AOD |
 | `persist.flipunlock.rotation.fix` | true | 旋转解锁 |
 | `persist.flipunlock.volume.keyremap` | true | 音量键方向跟随旋转 |

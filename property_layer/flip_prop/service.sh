@@ -16,7 +16,7 @@
 #
 # Switches:
 #   persist.flipunlock.single_outer        (written here; 1 = inner panel removed)
-#   persist.flipunlock.outer.force_closed  (default 1; 0 = let DisplayStateHook do it)
+#   persist.flipunlock.outer.force_closed  (default 1; 0 = skip, the layout table still keeps the outer as the main display)
 #   persist.flipunlock.outer.pin_rotation  (default 1; 0 = don't touch rotation settings)
 #   persist.flipunlock.provision_skip      (default 1; 0 = leave the setup wizard alone)
 MODDIR=${0%/*}

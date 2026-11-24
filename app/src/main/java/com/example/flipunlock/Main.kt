@@ -11,8 +11,6 @@ import com.example.flipunlock.hook.settings.ImeBottomSupportHook
 import com.example.flipunlock.hook.system_server.AppFullscreen
 import com.example.flipunlock.hook.system_server.AppInterceptUnlock
 import com.example.flipunlock.hook.system_server.CutoutRemove
-import com.example.flipunlock.hook.system_server.DisplayStateHook
-import com.example.flipunlock.hook.system_server.DisplayKeepOnHook
 import com.example.flipunlock.hook.system_server.ImmersiveStatusBar
 import com.example.flipunlock.hook.system_server.Flip1OuterCutoutHook
 import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
@@ -55,7 +53,7 @@ class Main : XposedModule() {
         SystemUiKeyguardFix,            // systemui 崩溃环兜底: providesTinyKeyguardViewPager 强制 inflate(Lite, flip1 only)
         QSTileMinCountFixHook,          // 控制中心编辑磁贴下限解除(12→4) [2026-08-22 v8: 保险6 插件路径 QSRecord.setRemovable→proceed(true) + 保险7/8 Compose 判定与写库拦截]
         QSPanelWidthFixHook,            // 横屏控制中心磁贴布局撑满屏幕宽度 [2026-08-22: hook MainPanelController.updatePanelWidth, HORIZONTAL→(屏宽-中缝)/2]
-        FlashlightHook,                 // 外屏手电筒: 跳过"翻开手机"提示, 磁贴直接开关 [2026-11-23 从观察一期转正; 取代 DisplayStateHook 的 getCurrentState→6 全局 hack]
+        FlashlightHook,                 // 外屏手电筒: 跳过"翻开手机"提示, 磁贴直接开关 [2026-11-23 从观察一期转正; 取代旧的 getCurrentState→6 全局 hack]
         AodHook,                        // AOD 外屏显示(flip1 only; 内部 gate: flip2 SKIP) [2026-08-15 恢复]
         TinyScreenFixHook,              // 属性层死角: getScreenType→0 + isTinyScreen/isFlipTinyScreen→false(修 TIM 通知弹提示)
         ImeBottomSupportHook,           // 设置「全面屏键盘优化」入口: 国际版 IS_INTERNATIONAL_BUILD 硬隐藏解除(scope 需含 com.android.settings)
@@ -98,8 +96,6 @@ class Main : XposedModule() {
         if (!isFlip2Device()) {
             Flip1OuterCutoutHook.hook(param)
         }
-        DisplayStateHook.hook(param)         // DeviceState 钉死: 1b 恒布局 + getCurrentState(flip2→6 双屏/ flip1→0 外屏)
-        DisplayKeepOnHook.hook(param)        // [2026-11-15] 单外屏保命: 拦 display 0(幽灵内屏)掉电, 默认关(prop 打开)
         ImmersiveStatusBar.hook(param)       // [2026-11-23] 外屏默认沉浸: 状态栏 114px 让给应用(forced-hide 通道)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
         RotationFixHook.hook(param)        // 旋转解除(Lite 移植): MiuiOrientationImpl 折叠态开放旋转

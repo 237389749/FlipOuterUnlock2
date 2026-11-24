@@ -35,7 +35,7 @@
 3. SystemUI 崩溃自愈：1 分钟内崩 3 次 → 身份还原 4 + 重启 SystemUI；
 4. **flip2 单外屏**：`cmd device_state state 0`（外屏变 logical display 0）→ 属性 1 时再
    `wm fixed-to-user-rotation enabled` 钉竖屏。开关：`persist.flipunlock.outer.force_closed`
-   （默认 1；设 0 = 不切、由 LSPosed 的 `DisplayStateHook` 负责）。
+   （默认 1；设 0 = 不切，布局表照样保证外屏是主屏）。
    **v7 起不再死等 `uptime ≥ 60`**：outer_only 布局表把每个 state 都映射到外屏后，拓扑不再依赖时序
    （实测停在 HALF_OPENED 也能正常出图、旋转正常），所以改成"尽快切 + 失败重试"，生效窗口从 60s 压到几秒；
 5. **布局表自检**：从 `dumpsys display` 读真实 outer / inner 地址，与已装的表比对；

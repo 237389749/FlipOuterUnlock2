@@ -12,7 +12,6 @@ package com.example.flipunlock.hook.util
  *   persist.flipunlock.display.aod            # 外屏 AOD（flip1）
  *   persist.flipunlock.display.cutout         # 去挖孔
  *   persist.flipunlock.display.fullscreen     # 去 size-compat letterbox
- *   persist.flipunlock.display.state          # DeviceState 布局按状态分支
  *   persist.flipunlock.rotation.fix           # 旋转解除
  *   persist.flipunlock.volume.keyremap        # 音量键跟随旋转
  *   persist.flipunlock.wallpaper.fix          # 壁纸尺寸钳制
@@ -46,9 +45,6 @@ object Config {
         "persist.flipunlock.gesture.sf",
         "persist.flipunlock.rotation.fix",
         "persist.flipunlock.wallpaper.fix",
-        "persist.flipunlock.display.state",
-        "persist.flipunlock.display.keepon",
-        "persist.flipunlock.display.keepon.block",
         "persist.flipunlock.single_outer",
         "persist.flipunlock.ui.qstilemin",
         "persist.flipunlock.ui.qspanelwidth",
@@ -108,13 +104,6 @@ object Config {
     val rotationFix: Boolean get() = enabled && raw("persist.flipunlock.rotation.fix", true)
     // WallpaperFixHook(壁纸尺寸钳制, 修开机壁纸右侧黑)开关
     val wallpaperFix: Boolean get() = enabled && raw("persist.flipunlock.wallpaper.fix", true)
-    // DisplayStateHook(DeviceState 钉死: 1b 恒布局 + getCurrentState)开关 — 高影响, 关可回退
-    val displayState: Boolean get() = enabled && raw("persist.flipunlock.display.state", true)
-    // DisplayKeepOnHook(单外屏保命: 阻止 display 0 幽灵内屏掉电)开关
-    //   2026-11-15 新增: 拔内屏后框架一 disable display 0 就硬复位(refMD §10/§11)。
-    //   默认关; 打开后先只记日志(block=false), 确认路径再把 block 打开。
-    val displayKeepOn: Boolean get() = enabled && raw("persist.flipunlock.display.keepon", false)
-    val displayKeepOnBlock: Boolean get() = displayKeepOn && raw("persist.flipunlock.display.keepon.block", false)
     // Single outer screen mode: the inner panel has been removed.
     // Tri-state:
     //   persist.flipunlock.single_outer = 1/0  -> explicit (the companion KSU module
@@ -140,7 +129,7 @@ object Config {
     // SystemUiKeyguardFix(崩溃环兜底)开关 — 默认 true; 关闭注意 systemui 崩溃环风险
     val keyguardFix: Boolean get() = enabled && raw("persist.flipunlock.ui.keyguardfix", true)
     // FlashlightHook(外屏手电筒"翻转提示"直通: setFlipListening→直接开关 + 跳过提示弹窗)开关
-    //   2026-11-23 从「观察一期」转正: 它取代了 DisplayStateHook 里 getCurrentState→6 的全局 hack
+    //   2026-11-23 从「观察一期」转正: 它取代了旧的 getCurrentState→6 全局 hack
     val flashlightFix: Boolean get() = enabled && raw("persist.flipunlock.ui.flashlight", true)
     // TinyScreenFixHook(属性层死角: getScreenType/isTinyScreen→false)开关
     val tinyScreenFix: Boolean get() = enabled && raw("persist.flipunlock.identity.tinyscreen", true)
