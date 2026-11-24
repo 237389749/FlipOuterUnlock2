@@ -19,6 +19,7 @@
 **Display & Cutout** (system_server)
 - Remove cutout — `CutoutSpecification.Parser` zeroing (flip2 only; flip1 covered by property layer) + camera-process non-null cutout defense
 - Letterbox exemption — `Flip2CutoutLetterboxHook` (flip2 only)
+- Display state routing — `DisplayStateHook`: state 3 (fully open) → native layout, other states → outer layout. **Kept on purpose** (2026-11-24): retiring it makes state 3 render zoomed on the outer screen (two independent boots, identical frame hash); see refMD §44.17.
 
 **Fullscreen & Rotation** (system_server)
 - Force fullscreen — disable MIUI flip size-compat letterbox (`AppFullscreen`)
