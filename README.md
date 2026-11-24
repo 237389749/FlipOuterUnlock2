@@ -101,6 +101,7 @@ reboot
 | `persist.flipunlock.display.cutout` | true | Remove cutout (flip2) |
 | `persist.flipunlock.display.fullscreen` | true | Force fullscreen |
 | `persist.flipunlock.display.aod` | true | Outer-screen AOD |
+| `persist.flipunlock.installer.swap` | true | Default installer -> AOSP (`PackageInstallerSwap`) |
 | `persist.flipunlock.rotation.fix` | true | Rotation unlock |
 | `persist.flipunlock.volume.keyremap` | true | Volume key rotation direction |
 | `persist.flipunlock.wallpaper.fix` | true | Wallpaper size clamp |
@@ -237,6 +238,7 @@ reboot
 | `persist.flipunlock.display.cutout` | true | 去挖孔（flip2） |
 | `persist.flipunlock.display.fullscreen` | true | 强制全屏 |
 | `persist.flipunlock.display.aod` | true | 外屏 AOD |
+| `persist.flipunlock.installer.swap` | true | Default installer -> AOSP (`PackageInstallerSwap`) |
 | `persist.flipunlock.rotation.fix` | true | 旋转解锁 |
 | `persist.flipunlock.volume.keyremap` | true | 音量键方向跟随旋转 |
 | `persist.flipunlock.wallpaper.fix` | true | 壁纸尺寸钳制 |
