@@ -9,6 +9,8 @@
 #   4b. keep the /data display layout table in sync with the live display addresses
 #   5. only in that mode: force device_state=CLOSED so the outer panel becomes
 #      logical display 0, and pin the rotation
+#   6. hide the two lock-screen shortcut buttons (torch / camera) via the MIUI
+#      secure settings keyguard_shortcut_left/right = '{}'
 #
 # NOTE: the outer-screen app launch restriction ("open it on the inner screen") is
 # NOT handled here on purpose. It disappears once identity is 1 and the LSPosed
@@ -19,6 +21,7 @@
 #   persist.flipunlock.outer.force_closed  (default 1; 0 = skip, the layout table still keeps the outer as the main display)
 #   persist.flipunlock.outer.pin_rotation  (default 1; 0 = don't touch rotation settings)
 #   persist.flipunlock.provision_skip      (default 1; 0 = leave the setup wizard alone)
+#   persist.flipunlock.ui.lockscreen_shortcuts (default 1; 0 = keep torch/camera buttons)
 MODDIR=${0%/*}
 LOG=/data/local/tmp/flip_prop_service.log
 # 简单轮转（设备上没有 logrotate）：超过 ~256 KB 就切一份 .1，避免这个文件无限长大。
@@ -129,6 +132,28 @@ if [ "$(getprop ro.product.device)" = "bixi" ]; then
             log -t flip_prop "display layout rewritten (addresses drifted)"
         fi
     fi
+
+# ---- 6. 锁屏底部两个快捷按钮（手电筒 / 相机）-------------------------------
+# 外屏高度只有 1392px，这两个图标占掉底栏、还挡下滑手势，默认隐藏。
+# 机制：MIUI 的锁屏快捷方式就是两个 secure 设置（left=手电筒 / right=相机），
+#   把它们置成空对象 '{}' 后，下一次锁屏重建（重启 / 息屏再亮 / 重启 SystemUI）就不画了。
+#   实测 2026-11-25：置 {} 后息屏再亮 → 两个图标消失；没有改任何分区、没有 hook。
+# 开关: persist.flipunlock.ui.lockscreen_shortcuts（默认 1 = 隐藏；0 = 保留原样）
+# 恢复: uninstall.sh 会写回原厂 JSON（左 FLASHLIGHT_SET / 右 CAMERA_CAPTURE）。
+if [ "$(getprop persist.flipunlock.ui.lockscreen_shortcuts 1)" = "1" ]; then
+    L=$(settings get secure keyguard_shortcut_left 2>/dev/null)
+    R=$(settings get secure keyguard_shortcut_right 2>/dev/null)
+    if [ "$L" != "{}" ] || [ "$R" != "{}" ]; then
+        settings put secure keyguard_shortcut_left '{}'
+        settings put secure keyguard_shortcut_right '{}'
+        echo "lockscreen shortcuts hidden (was left=${L%%,*} right=${R%%,*})"
+        log -t flip_prop "lockscreen shortcuts hidden"
+    else
+        echo "lockscreen shortcuts already hidden"
+    fi
+else
+    echo "lockscreen shortcuts kept (persist.flipunlock.ui.lockscreen_shortcuts=0)"
+fi
 
     if [ "$SINGLE_OUTER" = "1" ] && [ "$(getprop persist.flipunlock.outer.force_closed 1)" = "1" ]; then
         # 2026-11-24: 原来是"死等 uptime ≥ 60 再切"。那是布局表还没修好时（state 2 会指到内屏、

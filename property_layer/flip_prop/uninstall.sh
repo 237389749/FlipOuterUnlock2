@@ -38,6 +38,35 @@ resetprop -p --delete persist.flipunlock.touchpatch.status 2>/dev/null
 rm -f /data/system/displayconfig/display_layout_configuration.xml
 echo "uninstall: display layout override removed (phantom display returns next boot)"
 
+# restore the two lock-screen shortcut buttons that service.sh hides
+# (stock values measured on bixi / OS4.0.3; the plugin re-reads them on the next
+#  keyguard inflation, so a reboot is required to see them again)
+LEFT_SHORTCUT='{
+  "action": "android.intent.action.VIEW",
+  "iconId": "@2131232070",
+  "isOverlay": false,
+  "isSystemDefault": true,
+  "nameId": "@2131886359",
+  "packageName": "miui.systemui.plugin",
+  "tag": "FLASHLIGHT_SET",
+  "targetClass": "miui.systemui.flashlight.MiFlashlightActivity",
+  "targetPackage": "miui.systemui.plugin"
+}'
+RIGHT_SHORTCUT='{
+  "action": "android.media.action.STILL_IMAGE_CAMERA",
+  "iconId": "@2131233493",
+  "isOverlay": false,
+  "isSystemDefault": true,
+  "nameId": "@2132020095",
+  "packageName": "com.android.camera",
+  "tag": "CAMERA_CAPTURE",
+  "targetClass": "com.android.camera.Camera",
+  "targetPackage": "com.android.camera"
+}'
+settings put secure keyguard_shortcut_left "$LEFT_SHORTCUT" 2>/dev/null
+settings put secure keyguard_shortcut_right "$RIGHT_SHORTCUT" 2>/dev/null
+echo "uninstall: lock-screen shortcuts restored"
+
 # rotation pinned by service.sh -> give auto-rotate back to the user
 settings delete system accelerometer_rotation 2>/dev/null
 settings delete system user_rotation 2>/dev/null

@@ -41,6 +41,10 @@
 5. **布局表自检**：从 `dumpsys display` 读真实 outer / inner 地址，与已装的表比对；
    地址漂移（换 ROM）就按真实值重写，日志写明"下次开机生效"。
 
+6. **锁屏底部两个快捷按钮默认隐藏**：把 `keyguard_shortcut_left/right`（手电筒/相机）写成 `'{}'`，
+   外屏 1392px 高，这两个图标占底栏还挡手势。开关 `persist.flipunlock.ui.lockscreen_shortcuts`（默认 1）；
+   `uninstall.sh` 写回原厂 JSON 恢复。机制与实测见 refMD `LockScreen.md` 末节。
+
 `uninstall.sh`：`multi_display_type` 写回 4（persist 属性不会自己消失），清掉 CWB 运行时属性、
 单外屏开关，并**删掉 `/data/system/displayconfig/display_layout_configuration.xml`**
 （否则幽灵屏会一直保持被禁用；MIUI 自己的 `display_cloud_backup.xml` 不动）。
