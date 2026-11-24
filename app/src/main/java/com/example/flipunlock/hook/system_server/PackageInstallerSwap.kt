@@ -6,6 +6,7 @@ import com.example.flipunlock.hook.util.callMethod
 import com.example.flipunlock.hook.util.getField
 import com.example.flipunlock.hook.util.hook
 import com.example.flipunlock.hook.util.log
+import com.example.flipunlock.hook.util.method
 import com.example.flipunlock.hook.util.safeHook
 import com.example.flipunlock.hook.util.setField
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
