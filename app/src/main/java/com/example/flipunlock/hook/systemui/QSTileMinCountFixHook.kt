@@ -51,6 +51,10 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  *          Pitfall #9）; isHooked 防 PluginFactory 多次调用重复 hook
  *   保险7(Compose 删除判定核心): EditTileListState.isDraggedCellRemovable() → 恒 true
  *   保险8(写库拦截解除): MiuiTileSpecRepository.getInterceptUpdateTiles() → false（零售/超省电）
+ *   保险9(2026-11-25 OS4 新增): 视图层 `QSTileItemView.updateRemovable` → 强制 true。
+ *      OS4 上仅靠保险6 不够：QSRecord 字段被强制 true 后，ROM 的 setRemovable(true) 因
+ *      `field == z` 提前 return，新建/复用的 tile view 收不到 true，于是减号不显示。
+ *      本层直接改视图侧字段，点"编辑"时 onModeChanged → updateMark() 就能把减号画出来。
  * 开关: persist.flipunlock.ui.qstilemin（默认 true）
  */
 object QSTileMinCountFixHook : BaseHook() {
@@ -150,11 +154,18 @@ object QSTileMinCountFixHook : BaseHook() {
                         Boolean::class.javaPrimitiveType!!,
                         Boolean::class.javaPrimitiveType!!
                     )
+                    // 核心修复（2026-11-25 OS4）：减号由视图侧 `removable` 决定，
+                    //   getShowMark() = (removable || !added) && mode != NORMAL。
+                    //   OS4 里点在"编辑"时 onModeChanged → updateMark() 才重算，而视图的 removable
+                    //   在 NORMAL 绑定时已被 updateRemovable(false) 置 false；QSRecord 那层被我们
+                    //   强制成 true 后，ROM 再调 setRemovable(true) 会因 `field==z` 提前 return，
+                    //   视图永远收不到 true → 减号不出现。所以这一层必须直接兜住视图。
                     hook(upd) { inner ->
-                        if (n.getAndIncrement() < 40) {
-                            log("QSProbe: updateRemovable(${inner.args.getOrNull(0)}) ${snap(inner.thisObject)}")
+                        val animate = inner.args.getOrNull(1) ?: true
+                        if (n.getAndIncrement() < 12) {
+                            log("QSTileMinCountFix: updateRemovable(→true, animate=${animate}) ${snap(inner.thisObject)}")
                         }
-                        inner.proceed()
+                        inner.proceed(arrayOf<Any?>(true, animate))
                     }
                     val mark = viewCls.method("getShowMark")
                     hook(mark) { inner ->
