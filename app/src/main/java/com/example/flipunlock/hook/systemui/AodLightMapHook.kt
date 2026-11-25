@@ -1,12 +1,15 @@
 package com.example.flipunlock.hook.systemui
 
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.os.Handler
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.util.Config
-import com.example.flipunlock.hook.util.after
 import com.example.flipunlock.hook.util.currentProcessName
 import com.example.flipunlock.hook.util.hook
 import com.example.flipunlock.hook.util.log
-import com.example.flipunlock.hook.util.processClassLoader
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
@@ -18,7 +21,7 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  * MiuiDozeScreenBrightnessController: sensor event:33171029, value:5.0    ← 明亮室内
  * AodBrightness: doze brightness=8.54597E-4 (0%) floor=10%                ← 结果是最低档
  * ```
- * 同一 boot 里 23:24 那轮传感器报 `4.0` → `AodBrightness ... 1.0 (100%)`。
+ * 同一 boot 的 23:24 那轮传感器报 `4.0` → `AodBrightness ... 1.0 (100%)`。
  *
  * ## 根因
  * `com.miui.aod.doze.MiuiDozeScreenBrightnessController.sensorReactChange(int)`（`:205`）：
@@ -32,15 +35,18 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  * → `Utils.sLightValues == null` → 查表分支永不执行 → 只剩「4 高 / 5 低」兜底，
  * 而本机明亮室内恰好报 **5**。
  *
- * ## 做法
- * 在插件自己的 classloader 上 hook `sensorReactChange(int)`，把 **5 改写成 4**（其余原样）。
- * 不碰亮度常量、不碰 doze 状态：暗环境（3）仍走原生低档 + 5 分钟熄屏语义。
+ * ## 做法（为什么改事件，而不是改插件方法）
+ * 在 SystemUI 进程 hook `SensorManager.registerListener(SensorEventListener, Sensor,
+ * int, int, Handler)`（插件注册光线监听用的就是这个 5 参重载，
+ * `MiuiDozeScreenBrightnessController.java:183`）：当 `sensor.type == 33171029` 时，
+ * 把回调包一层 —— 传感器事件里 `values[0] == 5` 改写为 `4`，再交给插件。
  *
- * ## 为什么必须拿插件 classloader
- * `com.miui.aod.*` 由 MIUIAod 插件 APK 单独加载（见 `AodHook` 头注释），
- * `onPackageReady` 的 classLoader 看不到；这里从 `MiuiDozeService` 实例的对象图反查
- * （BFS 同 `AodHook.pluginClassLoaderFrom`）。装不上不置位，下次 dream 再试。
+ * 试过但不可行：在 `MiuiDozeService.onCreate` 后从对象图 BFS 找 MIUIAod 的 classloader，
+ * 再 hook `sensorReactChange` —— flip2 上 onCreate 时刻 `com.miui.aod.*` 还不在实例图里
+ * （实测连续两次 `loader 还没出现`），而 doze 期间又不会再调 onCreate。
+ * 钩注册点还有一个好处：**进程启动即装好**，不会错过熄屏后的第一个传感器事件。
  *
+ * 只改写这一颗传感器的值；`AodBrightnessHook` 的 10% 下限继续兜底（暗环境）。
  * 开关：`persist.flipunlock.aod.light_map`（默认 true）；机型 gate：single_outer。
  */
 object AodLightMapHook : BaseHook() {
@@ -49,15 +55,15 @@ object AodLightMapHook : BaseHook() {
 
     private const val TAG = "AodLightMap"
 
-    /** `sensorReactChange` 里「明亮」的那两个档：4=高亮、5=兜底成最低。把 5 当 4。 */
-    private const val LEVEL_MAP_FROM = 5
-    private const val LEVEL_MAP_TO = 4
+    /** `xiaomi.sensor.aod`：AOD 环境光档位（1/2=遮挡、3=暗、4=高亮、5=兜底成最低）。 */
+    private const val SENSOR_AOD_LIGHT = 33171029
 
-    /** 已装过 hook 的 classloader（同一个 loader 只装一次；插件重建 loader 会再装）。 */
-    private val hookedLoaders = mutableSetOf<ClassLoader>()
+    private const val LEVEL_MAP_FROM = 5f
+    private const val LEVEL_MAP_TO = 4f
 
-    /** 档位日志去重。 */
-    private var lastLevel = Int.MIN_VALUE
+    /** 包装/改写日志各限几条，避免每次注册都刷。 */
+    private var wrappedCount = 0
+    private var mappedCount = 0
 
     override fun setupHooks(param: PackageReadyParam) {
         if (!Config.displayAod) {
@@ -76,94 +82,64 @@ object AodLightMapHook : BaseHook() {
             log("$TAG: skip, process=${currentProcessName()}")
             return
         }
-        val cl = runCatching { processClassLoader(param.classLoader) }.getOrDefault(param.classLoader)
-        val onCreate = runCatching {
-            cl.loadClass("com.android.keyguard.doze.MiuiDozeService")
-                .getDeclaredMethod("onCreate")
-                .apply { isAccessible = true }
+        val method = runCatching {
+            SensorManager::class.java.getDeclaredMethod(
+                "registerListener",
+                SensorEventListener::class.java,
+                Sensor::class.java,
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+                Handler::class.java
+            ).also { it.isAccessible = true }
         }.getOrNull()
-        if (onCreate == null) {
-            log("$TAG: MiuiDozeService.onCreate 不存在, skip")
+        if (method == null) {
+            log("$TAG: SensorManager.registerListener(5 参) 不存在, skip")
             return
         }
-        // onCreate 时插件实例已挂到 service 上（setDozeRequester 在 onCreate 内），
-        // 从实例图能拿到 MIUIAod 的 classloader。
-        hook(onCreate, after { chain, result ->
-            install(chain.thisObject, cl, param.classLoader)
-            result
-        })
-        log("$TAG: ✓ MiuiDozeService.onCreate hooked（等插件实例后装 sensorReactChange）")
-    }
-
-    private fun install(service: Any?, vararg loaders: ClassLoader) {
-        val candidates = mutableListOf<ClassLoader>()
-        loaders.forEach { candidates.add(it) }
-        pluginClassLoaderFrom(service)?.let { candidates.add(it) }
-
-        for (loader in candidates.distinct()) {
-            if (!hookedLoaders.add(loader)) continue
-            val method = runCatching {
-                loader.loadClass("com.miui.aod.doze.MiuiDozeScreenBrightnessController")
-                    .getDeclaredMethod("sensorReactChange", Int::class.javaPrimitiveType!!)
-                    .apply { isAccessible = true }
-            }.getOrNull() ?: continue
-            runCatching {
-                hook(method) { chain ->
-                    val level = chain.args.getOrNull(0) as? Int
-                    if (level != null && level != lastLevel) {
-                        lastLevel = level
-                        log(
-                            "$TAG: light level=$level" +
-                                if (level == LEVEL_MAP_FROM) " → $LEVEL_MAP_TO（明亮档改走高亮）" else ""
-                        )
-                    }
-                    if (level == LEVEL_MAP_FROM) {
-                        chain.proceed(arrayOf<Any?>(LEVEL_MAP_TO))
-                    } else {
-                        chain.proceed()
-                    }
+        hook(method) { chain ->
+            val listener = chain.args.getOrNull(0) as? SensorEventListener
+            val sensor = chain.args.getOrNull(1) as? Sensor
+            if (listener != null && sensor?.type == SENSOR_AOD_LIGHT) {
+                if (wrappedCount < 3) {
+                    wrappedCount++
+                    log("$TAG: wrap listener for type=$SENSOR_AOD_LIGHT（$LEVEL_MAP_FROM→$LEVEL_MAP_TO）")
                 }
-                log("$TAG: ✓ sensorReactChange hooked on cl=${loader.javaClass.simpleName}")
-                return
-            }.onFailure { log("$TAG: sensorReactChange hook failed: ${it.message}") }
+                val wrapped = LevelMapListener(listener)
+                chain.proceed(
+                    arrayOf<Any?>(
+                        wrapped,
+                        sensor,
+                        chain.args.getOrNull(2),
+                        chain.args.getOrNull(3),
+                        chain.args.getOrNull(4)
+                    )
+                )
+            } else {
+                chain.proceed()
+            }
         }
-        log("$TAG: sensorReactChange 未装上（loader 还没出现），下次 dream 再试")
+        log("$TAG: ✓ SensorManager.registerListener hooked (type=$SENSOR_AOD_LIGHT 的 $LEVEL_MAP_FROM 视为 $LEVEL_MAP_TO)")
     }
 
-    /**
-     * 从对象图反查 AOD 插件 classloader（BFS，深度 ≤6，只沿 miui.aod 分支）。
-     * 与 `AodHook.pluginClassLoaderFrom` 同策略；那边是 flip1-only，这里 flip2 单外屏用。
-     */
-    private fun pluginClassLoaderFrom(root: Any?): ClassLoader? {
-        if (root == null) return null
-        val visited = mutableSetOf<Int>()
-        val queue = ArrayDeque<Any>()
-        queue.add(root)
-        var level = 1
-        var depth = 0
-        while (queue.isNotEmpty() && depth <= 6) {
-            var next = 0
-            repeat(level) {
-                if (queue.isEmpty()) return@repeat
-                val obj = queue.removeFirst()
-                if (!visited.add(System.identityHashCode(obj))) return@repeat
-                val cls = obj.javaClass
-                if (cls.name.startsWith("com.miui.aod")) return cls.classLoader
-                for (f in cls.declaredFields) {
-                    val v = runCatching {
-                        f.isAccessible = true
-                        f.get(obj)
-                    }.getOrNull() ?: continue
-                    val n = v.javaClass.name
-                    if (n.startsWith("com.miui.aod") || n.startsWith("com.android.keyguard")) {
-                        queue.add(v)
-                        next++
-                    }
+    /** 光线事件转发：把「明亮档 5」改成「高亮档 4」，其余原样。 */
+    private inner class LevelMapListener(
+        private val delegate: SensorEventListener
+    ) : SensorEventListener {
+
+        override fun onSensorChanged(event: SensorEvent) {
+            val values = event.values
+            if (values != null && values.isNotEmpty() && values[0] == LEVEL_MAP_FROM) {
+                values[0] = LEVEL_MAP_TO
+                if (mappedCount < 5) {
+                    mappedCount++
+                    log("$TAG: light $LEVEL_MAP_FROM → $LEVEL_MAP_TO（改走高亮）")
                 }
             }
-            depth++
-            level = next
+            delegate.onSensorChanged(event)
         }
-        return null
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+            delegate.onAccuracyChanged(sensor, accuracy)
+        }
     }
 }
