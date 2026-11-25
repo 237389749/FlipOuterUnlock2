@@ -31,7 +31,7 @@
 - Wallpaper size clamping — `WallpaperFixHook` (flip1 right-side black / flip2 property-layer half-black background)
 
 **Control Center** (systemui)
-- QS tile edit minimum removal — `QSTileMinCountFixHook`: plugin `QSRecord.setRemovable → true` (landscape/inner-style VERTICAL control center) + AOSP/Compose fallbacks
+- QS tile edit minimum removal — `QSTileMinCountFixHook`: the minus badge is forced on both sides — view (`QSTileItemView.updateRemovable → true`) and record (`QSRecord.removable = true` written on the field after `QSListController` list changes, because `setRemovable` is R8-inlined on OS4) — plus AOSP/Compose fallbacks
 - Landscape control center — `QSPanelWidthFixHook`: when the plugin's two panels (2×1052px + center gap) don't fit the screen, `CommonUtils.getInVerticalMode` is forced true (single panel = portrait layout) and the panel is widened to fill, so the fixed tiles (WiFi/media/brightness/volume) are no longer pushed off-screen
 
 **SystemUI stability & identity**
@@ -168,7 +168,7 @@ AGPL-3.0
 - 壁纸尺寸钳制 — `WallpaperFixHook`（flip1 右侧黑 / flip2 属性层背景一半黑）
 
 **控制中心**（systemui）
-- 磁贴编辑下限解除 — `QSTileMinCountFixHook`：插件 `QSRecord.setRemovable → true`（内屏样式 VERTICAL 控制中心）+ AOSP/Compose 兜底
+- 磁贴编辑下限解除 — `QSTileMinCountFixHook`：减号显示与点击两侧都兜——视图侧 `QSTileItemView.updateRemovable → true`，记录侧在 `QSListController` 列表变更后直接写 `QSRecord.removable = true`（OS4 上 `setRemovable` 被 R8 内联，setter hook 不生效）+ AOSP/Compose 兜底
 - 横屏控制中心 — `QSPanelWidthFixHook`：插件双面板(2×1052px+中缝)放不下屏宽时，强制 `CommonUtils.getInVerticalMode`→true（退回单面板＝竖屏版式）并把面板撑满，固定磁贴(WiFi/媒体/亮度/音量)不再被挤出屏外
 
 **SystemUI 稳定与身份**
