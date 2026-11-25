@@ -104,7 +104,12 @@ object AodLightMapHook : BaseHook() {
                     wrappedCount++
                     log("$TAG: wrap listener for type=$SENSOR_AOD_LIGHT（$LEVEL_MAP_FROM→$LEVEL_MAP_TO）")
                 }
-                val wrapped = LevelMapListener(listener)
+                val wrapped = LevelMapListener(listener) {
+                    if (mappedCount < 5) {
+                        mappedCount++
+                        log("$TAG: light $LEVEL_MAP_FROM → $LEVEL_MAP_TO（改走高亮）")
+                    }
+                }
                 chain.proceed(
                     arrayOf<Any?>(
                         wrapped,
@@ -122,18 +127,16 @@ object AodLightMapHook : BaseHook() {
     }
 
     /** 光线事件转发：把「明亮档 5」改成「高亮档 4」，其余原样。 */
-    private inner class LevelMapListener(
-        private val delegate: SensorEventListener
+    private class LevelMapListener(
+        private val delegate: SensorEventListener,
+        private val onMapped: () -> Unit
     ) : SensorEventListener {
 
         override fun onSensorChanged(event: SensorEvent) {
             val values = event.values
-            if (values != null && values.isNotEmpty() && values[0] == LEVEL_MAP_FROM) {
+            if (values.isNotEmpty() && values[0] == LEVEL_MAP_FROM) {
                 values[0] = LEVEL_MAP_TO
-                if (mappedCount < 5) {
-                    mappedCount++
-                    log("$TAG: light $LEVEL_MAP_FROM → $LEVEL_MAP_TO（改走高亮）")
-                }
+                onMapped()
             }
             delegate.onSensorChanged(event)
         }
