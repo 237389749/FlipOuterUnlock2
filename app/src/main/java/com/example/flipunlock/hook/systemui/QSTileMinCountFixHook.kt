@@ -55,6 +55,12 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  *      OS4 上仅靠保险6 不够：QSRecord 字段被强制 true 后，ROM 的 setRemovable(true) 因
  *      `field == z` 提前 return，新建/复用的 tile view 收不到 true，于是减号不显示。
  *      本层直接改视图侧字段，点"编辑"时 onModeChanged → updateMark() 就能把减号画出来。
+ *   保险10(2026-11-25 OS4 新增, 减号"点了没反应"的根因): 记录侧 `QSRecord.removable` 字段强制 true。
+ *      **`setRemovable` 被 R8 内联进 QSListController 的三个调用点**（运行期探针 0 次命中），
+ *      所以保险6 的 setter hook 在 OS4 上是死代码 —— `addedTiles.size()<=8` 时字段被直接写 false，
+ *      而视图侧被保险9 强制显示减号 ⇒ 减号可见，但 `QSRecord$markClickAction$1` 里
+ *      `if (getRemovable()) removeTile` 为 false → 点击无声无息。
+ *      本层在 distributeTiles/addTile/removeTile/distributeTileInfo 之后直接写字段（绕开内联）。
  * 开关: persist.flipunlock.ui.qstilemin（默认 true）
  */
 object QSTileMinCountFixHook : BaseHook() {
@@ -126,138 +132,30 @@ object QSTileMinCountFixHook : BaseHook() {
                         continue
                     }
                     // Pitfall #9: 不写 args, proceed(arrayOf(true)) 以 true 参数调用原方法
-                    val probeCount = java.util.concurrent.atomic.AtomicInteger(0)
-                    hook(setRemovable, Hooker { inner ->
-                        // [PROBE 2026-11-25] OS4 上减号不出现：先看这个入口到底有没有被调用、原始值是什么
-                        if (probeCount.getAndIncrement() < 30) {
-                            log("QSProbe: ${cls.simpleName}.setRemovable(${inner.args.firstOrNull()}) → 强制 true")
-                        }
-                        inner.proceed(arrayOf<Any?>(true))
-                    })
+                    // ⚠️ 2026-11-25 实测：OS4 上本方法被 R8 **内联**进 QSListController 的三个调用点，
+                    //    运行期一次都不会走到这里（探针 0 次命中）。保留作旧固件兜底，
+                    //    真正生效的是保险10（直接写记录侧字段，见文件末尾）。
+                    hook(setRemovable, Hooker { inner -> inner.proceed(arrayOf<Any?>(true)) })
                     hooked = true
                     log("QSTileMinCountFix: 保险6 ✓ ${cls.name}.setRemovable → proceed(true)(减号恒显示)")
                 }
-                // [PROBE 2026-11-25] 减号由视图侧 getShowMark 决定：
-                //   QSTileItemView.getShowMark() = (removable || !added) && mode != NORMAL
-                // 把 removable/added/mode 打出来，判断是"没人调 setRemovable"还是"视图不是这个类"。
+                // ── 保险 9(2026-11-25 OS4 新增): 视图层 `removable` 强制 true ──
+                // 减号显不显示只看视图自己: getShowMark() = (removable || !added) && mode != NORMAL。
+                // OS4 里 QSRecord 侧字段为 true 时，ROM 再调 setRemovable(true) 会因 `field == z`
+                // 提前 return，视图永远收不到 true（NORMAL 绑定时已被置过 false）→ 减号不出现。
+                // 这一层直接兜视图：进 EDIT 时 onModeChanged → updateMark() 即可画出减号。
                 runCatching {
                     val viewCls = pluginLoader.loadClass("miui.systemui.controlcenter.qs.tileview.QSTileItemView")
-                    val fRemovable = viewCls.field("removable")
-                    val fAdded = viewCls.field("added")
-                    val fMode = viewCls.field("mode")
-                    fun snap(v: Any?): String = runCatching {
-                        "removable=${fRemovable.getBoolean(v)} added=${fAdded.getBoolean(v)} mode=${fMode.get(v)}"
-                    }.getOrDefault("?")
-                    val n = java.util.concurrent.atomic.AtomicInteger(0)
                     val upd = viewCls.method(
                         "updateRemovable",
                         Boolean::class.javaPrimitiveType!!,
                         Boolean::class.javaPrimitiveType!!
                     )
-                    // 核心修复（2026-11-25 OS4）：减号由视图侧 `removable` 决定，
-                    //   getShowMark() = (removable || !added) && mode != NORMAL。
-                    //   OS4 里点在"编辑"时 onModeChanged → updateMark() 才重算，而视图的 removable
-                    //   在 NORMAL 绑定时已被 updateRemovable(false) 置 false；QSRecord 那层被我们
-                    //   强制成 true 后，ROM 再调 setRemovable(true) 会因 `field==z` 提前 return，
-                    //   视图永远收不到 true → 减号不出现。所以这一层必须直接兜住视图。
                     hook(upd) { inner ->
-                        val animate = inner.args.getOrNull(1) ?: true
-                        if (n.getAndIncrement() < 12) {
-                            log("QSTileMinCountFix: updateRemovable(→true, animate=${animate}) ${snap(inner.thisObject)}")
-                        }
-                        inner.proceed(arrayOf<Any?>(true, animate))
+                        inner.proceed(arrayOf<Any?>(true, inner.args.getOrNull(1) ?: true))
                     }
-                    val mark = viewCls.method("getShowMark")
-                    hook(mark) { inner ->
-                        val r = inner.proceed()
-                        if (n.getAndIncrement() < 60) {
-                            log("QSProbe: getShowMark -> $r ${snap(inner.thisObject)}")
-                        }
-                        r
-                    }
-                    log("QSProbe: QSTileItemView hooked (removable/added/mode)")
-                }.onFailure { log("QSProbe: QSTileItemView probe failed: ${it.message}") }
-
-                // [PROBE2 2026-11-25] 减号点击无反应：逐段取证（定位完整块删除）
-                //   A markLambda：点击到底有没有到达 mark 的 lambda，到达时回调/模式是什么
-                //   B attach/detach：视图有没有被 detachListeners 解绑（解绑后点击静默 return）
-                //   C removeTile：删除入口收到调用后是否被 mode / 200ms 节流挡掉
-                runCatching {
-                    val viewCls = pluginLoader.loadClass("miui.systemui.controlcenter.qs.tileview.QSTileItemView")
-                    val fClick = viewCls.field("clickAction")
-                    val fMark = viewCls.field("markClickAction")
-                    val fMode = viewCls.field("mode")
-                    val fRemovable = viewCls.field("removable")
-                    val fAdded = viewCls.field("added")
-                    val budget = java.util.concurrent.atomic.AtomicInteger(0)
-                    fun p(msg: String) {
-                        if (budget.getAndIncrement() < 150) log("QSProbe2: $msg")
-                    }
-                    fun snap(v: Any?): String = runCatching {
-                        "click=${fClick.get(v) != null} mark=${fMark.get(v) != null} mode=${fMode.get(v)}" +
-                            " removable=${fRemovable.getBoolean(v)} added=${fAdded.getBoolean(v)}"
-                    }.getOrDefault("?")
-                    runCatching {
-                        val fLast = viewCls.field("lastTriggeredTime")
-                        val m = viewCls.method("onFinishInflate\$lambda\$1", viewCls, android.view.View::class.java)
-                        hook(m) { inner ->
-                            val v = inner.args.getOrNull(0)
-                            val now = android.os.SystemClock.elapsedRealtime()
-                            val last = runCatching { fLast.getLong(v) }.getOrDefault(-1L)
-                            p("markLambda id=${System.identityHashCode(v)} now=$now last=$last gap=${now - last} ${snap(v)}")
-                            val r = runCatching { inner.proceed() }
-                            p("markLambda done ok=${r.isSuccess} err=${r.exceptionOrNull()?.let { it.javaClass.simpleName + ":" + it.message }}")
-                            r.getOrThrow()
-                        }
-                        p("hook markLambda ok")
-                    }.onFailure { p("hook markLambda failed: ${it.message}") }
-                    runCatching {
-                        val markCls = pluginLoader.loadClass(
-                            "miui.systemui.controlcenter.panel.main.qs.QSRecord\$markClickAction\$1"
-                        )
-                        val m = markCls.method("invoke", android.view.View::class.java)
-                        hook(m) { inner ->
-                            // 读记录侧真值：markClickAction 里 `if (getRemovable())` 决定是否走 removeTile
-                            val info = runCatching {
-                                val rec = inner.thisObject.javaClass.field("this\$0").get(inner.thisObject)
-                                val rc = rec.javaClass
-                                "spec=${rc.field("spec").get(rec)} added=${rc.field("added").getBoolean(rec)}" +
-                                    " removable=${rc.field("removable").getBoolean(rec)}"
-                            }.getOrDefault("rec=?")
-                            p("markAction $info")
-                            inner.proceed()
-                        }
-                        p("hook markAction ok")
-                    }.onFailure { p("hook markAction failed: ${it.message}") }
-                    runCatching {
-                        val m = viewCls.method("detachListeners")
-                        hook(m) { inner ->
-                            p("detach id=${System.identityHashCode(inner.thisObject)} ${snap(inner.thisObject)}")
-                            inner.proceed()
-                        }
-                        p("hook detach ok")
-                    }.onFailure { p("hook detach failed: ${it.message}") }
-                    runCatching {
-                        val recCls = pluginLoader.loadClass("miui.systemui.controlcenter.panel.main.qs.QSRecord")
-                        val ctlCls = pluginLoader.loadClass("miui.systemui.controlcenter.panel.main.qs.QSListController")
-                        val m = ctlCls.method("removeTile", recCls)
-                        hook(m) { inner ->
-                            p("removeTile record=${inner.args.getOrNull(0)}")
-                            inner.proceed()
-                        }
-                        p("hook removeTile ok")
-                    }.onFailure { p("hook removeTile failed: ${it.message}") }
-                    runCatching {
-                        val recCls = pluginLoader.loadClass("miui.systemui.controlcenter.panel.main.qs.QSRecord")
-                        val qsCls = pluginLoader.loadClass("miui.systemui.controlcenter.qs.QSController")
-                        val m = qsCls.method("removeTile", recCls)
-                        hook(m) { inner ->
-                            p("QSController.removeTile record=${inner.args.getOrNull(0)}")
-                            inner.proceed()
-                        }
-                        p("hook QSController.removeTile ok")
-                    }.onFailure { p("hook QSController.removeTile failed: ${it.message}") }
-                }.onFailure { log("QSProbe2: setup failed: ${it.message}") }
+                    log("QSTileMinCountFix: 保险9 ✓ QSTileItemView.updateRemovable → true")
+                }.onFailure { log("QSTileMinCountFix: 保险9 安装失败: ${it.message}") }
 
                 // ── 保险10(2026-11-25 新增): 记录侧 `removable` 字段强制 true ──
                 // 真因：QSRecord.setRemovable 被 R8 **内联**进 QSListController 的三处调用点
@@ -317,10 +215,8 @@ object QSTileMinCountFixHook : BaseHook() {
                         log("QSTileMinCountFix: 保险7 $candidate 无 isDraggedCellRemovable(), skip")
                         continue
                     }
-                val c7 = java.util.concurrent.atomic.AtomicInteger(0)
                 hook(m) { inner ->
-                    val r = inner.proceed()
-                    if (c7.getAndIncrement() < 30) log("QSProbe: isDraggedCellRemovable -> $r (强制 true)")
+                    inner.proceed()
                     true
                 }
                 log("QSTileMinCountFix: 保险7 ✓ ${cls.name}.isDraggedCellRemovable → true")
