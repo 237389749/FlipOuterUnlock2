@@ -197,24 +197,34 @@ object QSTileMinCountFixHook : BaseHook() {
                         "click=${fClick.get(v) != null} mark=${fMark.get(v) != null} mode=${fMode.get(v)}" +
                             " removable=${fRemovable.getBoolean(v)} added=${fAdded.getBoolean(v)}"
                     }.getOrDefault("?")
+                    p("attach-ish methods: " + viewCls.declaredMethods
+                        .filter { it.name.contains("ttach") }
+                        .joinToString { m -> m.name + "(" + m.parameterTypes.joinToString { it.simpleName } + ")" })
                     runCatching {
+                        val fLast = viewCls.field("lastTriggeredTime")
                         val m = viewCls.method("onFinishInflate\$lambda\$1", viewCls, android.view.View::class.java)
                         hook(m) { inner ->
                             val v = inner.args.getOrNull(0)
-                            p("markLambda id=${System.identityHashCode(v)} ${snap(v)}")
-                            inner.proceed()
+                            val now = android.os.SystemClock.elapsedRealtime()
+                            val last = runCatching { fLast.getLong(v) }.getOrDefault(-1L)
+                            p("markLambda id=${System.identityHashCode(v)} now=$now last=$last gap=${now - last} ${snap(v)}")
+                            val r = runCatching { inner.proceed() }
+                            p("markLambda done ok=${r.isSuccess} err=${r.exceptionOrNull()?.let { it.javaClass.simpleName + ":" + it.message }}")
+                            r.getOrThrow()
                         }
                         p("hook markLambda ok")
                     }.onFailure { p("hook markLambda failed: ${it.message}") }
                     runCatching {
-                        val f1 = kotlin.jvm.functions.Function1::class.java
-                        val m = viewCls.method("attachListeners", f1, f1, f1, f1)
+                        val markCls = pluginLoader.loadClass(
+                            "miui.systemui.controlcenter.panel.main.qs.QSRecord\$markClickAction\$1"
+                        )
+                        val m = markCls.method("invoke", android.view.View::class.java)
                         hook(m) { inner ->
-                            p("attach id=${System.identityHashCode(inner.thisObject)} markArg=${inner.args.getOrNull(2) != null}")
+                            p("markAction.invoke(${inner.args.getOrNull(0)})")
                             inner.proceed()
                         }
-                        p("hook attach ok")
-                    }.onFailure { p("hook attach failed: ${it.message}") }
+                        p("hook markAction ok")
+                    }.onFailure { p("hook markAction failed: ${it.message}") }
                     runCatching {
                         val m = viewCls.method("detachListeners")
                         hook(m) { inner ->
@@ -225,6 +235,18 @@ object QSTileMinCountFixHook : BaseHook() {
                     }.onFailure { p("hook detach failed: ${it.message}") }
                     runCatching {
                         val recCls = pluginLoader.loadClass("miui.systemui.controlcenter.panel.main.qs.QSRecord")
+                        for (g in listOf("getRemovable", "getAdded")) {
+                            val m = recCls.method(g)
+                            hook(m) { inner ->
+                                val r = inner.proceed()
+                                p("record.$g=$r")
+                                r
+                            }
+                        }
+                        p("hook record getters ok")
+                    }.onFailure { p("hook record getters failed: ${it.message}") }
+                    runCatching {
+                        val recCls = pluginLoader.loadClass("miui.systemui.controlcenter.panel.main.qs.QSRecord")
                         val ctlCls = pluginLoader.loadClass("miui.systemui.controlcenter.panel.main.qs.QSListController")
                         val m = ctlCls.method("removeTile", recCls)
                         hook(m) { inner ->
@@ -233,6 +255,16 @@ object QSTileMinCountFixHook : BaseHook() {
                         }
                         p("hook removeTile ok")
                     }.onFailure { p("hook removeTile failed: ${it.message}") }
+                    runCatching {
+                        val recCls = pluginLoader.loadClass("miui.systemui.controlcenter.panel.main.qs.QSRecord")
+                        val qsCls = pluginLoader.loadClass("miui.systemui.controlcenter.qs.QSController")
+                        val m = qsCls.method("removeTile", recCls)
+                        hook(m) { inner ->
+                            p("QSController.removeTile record=${inner.args.getOrNull(0)}")
+                            inner.proceed()
+                        }
+                        p("hook QSController.removeTile ok")
+                    }.onFailure { p("hook QSController.removeTile failed: ${it.message}") }
                 }.onFailure { log("QSProbe2: setup failed: ${it.message}") }
                 result
             })
