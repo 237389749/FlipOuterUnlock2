@@ -22,6 +22,7 @@ import com.example.flipunlock.hook.system_server.WallpaperFixHook
 import com.example.flipunlock.hook.system_server.LockWallpaperFixHook
 import com.example.flipunlock.hook.camera.CameraFixHook
 import com.example.flipunlock.hook.systemui.FlashlightHook
+import com.example.flipunlock.hook.systemui.AodPanelLightHook
 import com.example.flipunlock.hook.systemui.QSTileMinCountFixHook
 import com.example.flipunlock.hook.systemui.QSPanelWidthFixHook
 import com.example.flipunlock.hook.systemui.SystemUiKeyguardFix
@@ -57,6 +58,8 @@ class Main : XposedModule() {
         QSPanelWidthFixHook,            // 横屏控制中心磁贴布局撑满屏幕宽度 [2026-08-22: hook MainPanelController.updatePanelWidth, HORIZONTAL→(屏宽-中缝)/2]
         FlashlightHook,                 // 外屏手电筒: 跳过"翻开手机"提示, 磁贴直接开关 [2026-11-23 从观察一期转正; 取代旧的 getCurrentState→6 全局 hack]
         AodHook,                        // AOD 外屏显示(flip1 only; 内部 gate: flip2 SKIP) [2026-08-15 恢复]
+        AodPanelLightHook,              // [2026-11-25] 单外屏 AOD 面板不亮: flip2+single_outer 把 doze 状态抬成 ON
+                                        //   (refMD AOD_Full_Chain §4 "4 不亮、2 亮"; 与 AodHook 机型互斥, 不抢同一方法)
         TinyScreenFixHook,              // 属性层死角: getScreenType→0 + isTinyScreen/isFlipTinyScreen→false(修 TIM 通知弹提示)
         ImeBottomSupportHook,           // 设置「全面屏键盘优化」入口: 国际版 IS_INTERNATIONAL_BUILD 硬隐藏解除(scope 需含 com.android.settings)
         ImeNavBarFixHook,               // 输入法底部 48dp 导航栏(⌄/🌐)→高度 0 (scope 需含输入法包)
