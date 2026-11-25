@@ -42,6 +42,7 @@ object Config {
         "persist.flipunlock.aod.trace",
         "persist.flipunlock.aod.brightness",
         "persist.flipunlock.aod.state",
+        "persist.flipunlock.aod.prox_fix",
         "persist.flipunlock.display.cutout",
         "persist.flipunlock.display.fullscreen",
         "persist.flipunlock.display.immersive",
@@ -84,6 +85,8 @@ object Config {
     //   2026-11-25：默认 0。"看得见 AOD" 改由 flip_prop 给外屏补 layer_has_aod 标志实现（LP1 仍省电）；
     //   抬成 2 会让面板常亮（功耗高），只在排查时用。
     val aodDozeState: Int get() = if (!enabled) 0 else readPropInt("persist.flipunlock.aod.state", 0)
+    // AOD 接近感应遮蔽：内屏拆掉后 nonui prox(33171027) 恒 NEAR → AOD 被 pause 后熄屏。默认 true。
+    val aodProxFix: Boolean get() = enabled && raw("persist.flipunlock.aod.prox_fix", true)
     val displayCutout: Boolean get() = enabled && raw("persist.flipunlock.display.cutout", true)
     val displayFullscreen: Boolean get() = enabled && raw("persist.flipunlock.display.fullscreen", true)
     // 外屏默认沉浸（状态栏 114px 让给应用）
