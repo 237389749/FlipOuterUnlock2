@@ -197,9 +197,6 @@ object QSTileMinCountFixHook : BaseHook() {
                         "click=${fClick.get(v) != null} mark=${fMark.get(v) != null} mode=${fMode.get(v)}" +
                             " removable=${fRemovable.getBoolean(v)} added=${fAdded.getBoolean(v)}"
                     }.getOrDefault("?")
-                    p("attach-ish methods: " + viewCls.declaredMethods
-                        .filter { it.name.contains("ttach") }
-                        .joinToString { m -> m.name + "(" + m.parameterTypes.joinToString { it.simpleName } + ")" })
                     runCatching {
                         val fLast = viewCls.field("lastTriggeredTime")
                         val m = viewCls.method("onFinishInflate\$lambda\$1", viewCls, android.view.View::class.java)
@@ -220,7 +217,14 @@ object QSTileMinCountFixHook : BaseHook() {
                         )
                         val m = markCls.method("invoke", android.view.View::class.java)
                         hook(m) { inner ->
-                            p("markAction.invoke(${inner.args.getOrNull(0)})")
+                            // 读记录侧真值：markClickAction 里 `if (getRemovable())` 决定是否走 removeTile
+                            val info = runCatching {
+                                val rec = inner.thisObject.javaClass.field("this\$0").get(inner.thisObject)
+                                val rc = rec.javaClass
+                                "spec=${rc.field("spec").get(rec)} added=${rc.field("added").getBoolean(rec)}" +
+                                    " removable=${rc.field("removable").getBoolean(rec)}"
+                            }.getOrDefault("rec=?")
+                            p("markAction $info")
                             inner.proceed()
                         }
                         p("hook markAction ok")
@@ -233,18 +237,6 @@ object QSTileMinCountFixHook : BaseHook() {
                         }
                         p("hook detach ok")
                     }.onFailure { p("hook detach failed: ${it.message}") }
-                    runCatching {
-                        val recCls = pluginLoader.loadClass("miui.systemui.controlcenter.panel.main.qs.QSRecord")
-                        for (g in listOf("getRemovable", "getAdded")) {
-                            val m = recCls.method(g)
-                            hook(m) { inner ->
-                                val r = inner.proceed()
-                                p("record.$g=$r")
-                                r
-                            }
-                        }
-                        p("hook record getters ok")
-                    }.onFailure { p("hook record getters failed: ${it.message}") }
                     runCatching {
                         val recCls = pluginLoader.loadClass("miui.systemui.controlcenter.panel.main.qs.QSRecord")
                         val ctlCls = pluginLoader.loadClass("miui.systemui.controlcenter.panel.main.qs.QSListController")
@@ -266,6 +258,45 @@ object QSTileMinCountFixHook : BaseHook() {
                         p("hook QSController.removeTile ok")
                     }.onFailure { p("hook QSController.removeTile failed: ${it.message}") }
                 }.onFailure { log("QSProbe2: setup failed: ${it.message}") }
+
+                // ── 保险10(2026-11-25 新增): 记录侧 `removable` 字段强制 true ──
+                // 真因：QSRecord.setRemovable 被 R8 **内联**进 QSListController 的三处调用点
+                //   （:615 distributeTiles / :776 addTile / :1068 removeTile），运行期一次都不会走方法调用，
+                //   所以保险6 的 setter hook 从来命中不了（探针实测 0 次）。
+                //   结果：addedTiles.size()<=8 时记录侧字段被直接写 false，而视图侧由保险9 强制显示减号 →
+                //   减号可见但点击时 `if (record.removable)` 为 false，什么都不做。
+                // 修法：列表每次变更后直接写字段（绕开内联），保证记录侧与视图侧一致。
+                safeHook("QSTileMinCountFix.10") {
+                    val recCls = pluginLoader.loadClass("miui.systemui.controlcenter.panel.main.qs.QSRecord")
+                    val ctlCls = pluginLoader.loadClass("miui.systemui.controlcenter.panel.main.qs.QSListController")
+                    val fRemovable = recCls.field("removable")
+                    val fAddedTiles = ctlCls.field("addedTiles")
+                    fun forceRecord(record: Any?) {
+                        if (record == null) return
+                        runCatching {
+                            if (!fRemovable.getBoolean(record)) {
+                                fRemovable.setBoolean(record, true)
+                                log("QSTileMinCountFix: 保险10 记录侧 removable: false→true")
+                            }
+                        }
+                    }
+                    fun forceAll(owner: Any?) {
+                        val list = runCatching { fAddedTiles.get(owner) as? List<*> }.getOrNull() ?: return
+                        for (r in list) forceRecord(r)
+                    }
+                    val afterFix = { chain: io.github.libxposed.api.XposedInterface.Chain, result: Any? ->
+                        forceAll(chain.thisObject)
+                        forceRecord(chain.args.getOrNull(0))
+                        result
+                    }
+                    hook(ctlCls.method("distributeTiles", Boolean::class.javaPrimitiveType!!), after(afterFix))
+                    hook(ctlCls.method("addTile", recCls), after(afterFix))
+                    hook(ctlCls.method("removeTile", recCls), after(afterFix))
+                    runCatching {
+                        hook(ctlCls.method("distributeTileInfo", List::class.java), after(afterFix))
+                    }
+                    log("QSTileMinCountFix: 保险10 ✓ QSListController 列表变更后强制记录 removable=true")
+                }
                 result
             })
             log("QSTileMinCountFix: 保险6 PluginFactory.createPluginContext hooked")
