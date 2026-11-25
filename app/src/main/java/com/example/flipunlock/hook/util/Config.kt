@@ -41,6 +41,7 @@ object Config {
         "persist.flipunlock.display.aod",
         "persist.flipunlock.aod.trace",
         "persist.flipunlock.aod.brightness",
+        "persist.flipunlock.aod.state",
         "persist.flipunlock.display.cutout",
         "persist.flipunlock.display.fullscreen",
         "persist.flipunlock.display.immersive",
@@ -78,6 +79,9 @@ object Config {
     //   2026-11-25：单外屏下 AOD 亮度档位恒为 i==5 → getDefaultLowBrightness()=1（≈5 nits），
     //   暗处可见、白天看不见；设 8 表示"AOD 至少 8% 亮度"。见 AodBrightnessHook / refMD §9。
     val aodBrightnessFloor: Int get() = if (!enabled) 0 else readPropInt("persist.flipunlock.aod.brightness", 0)
+    // AOD doze 状态覆盖：0=原生(4=DOZE_SUSPEND)，3=DOZE，2=ON。
+    //   2026-11-25 单外屏实测：4 下面板 LPM 不刷新（AOD 只存在于合成层），3 是连续刷新。
+    val aodDozeState: Int get() = if (!enabled) 0 else readPropInt("persist.flipunlock.aod.state", 0)
     val displayCutout: Boolean get() = enabled && raw("persist.flipunlock.display.cutout", true)
     val displayFullscreen: Boolean get() = enabled && raw("persist.flipunlock.display.fullscreen", true)
     // 外屏默认沉浸（状态栏 114px 让给应用）

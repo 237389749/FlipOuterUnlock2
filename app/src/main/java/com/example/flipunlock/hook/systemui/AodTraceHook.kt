@@ -98,7 +98,20 @@ object AodTraceHook : BaseHook() {
                     lastState = state
                     log("$TAG: screenState=$state(${stateName(state)}) caller=${caller()}")
                 }
-                chain.proceed()
+                // 可选：把 AOD 的 DOZE_SUSPEND(4) 钉成 DOZE(3) / ON(2)
+                //   单外屏实测：4 下面板 LPM 不刷新 → AOD 帧在合成里但屏上是黑的；
+                //   PMS 的 5s WAKE_UP 超时只对 2 生效（!mIsFullAod 时回落 4），所以 3 能站住。
+                val target = Config.aodDozeState
+                if (target > 0 && state == 4) {
+                    log("$TAG: ⚙ rewrite 4 → $target (persist.flipunlock.aod.state=$target)")
+                    if (types.size == 3) {
+                        chain.proceed(arrayOf<Any?>(target, chain.args.getOrNull(1) ?: 0, chain.args.getOrNull(2) ?: false))
+                    } else {
+                        chain.proceed(arrayOf<Any?>(target))
+                    }
+                } else {
+                    chain.proceed()
+                }
             }
             log("$TAG: ✓ DreamService.$name(${types.joinToString { it.simpleName }}) hooked")
         }.onFailure { log("$TAG: $name(${types.size}) hook failed: ${it.message}") }
