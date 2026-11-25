@@ -14,6 +14,7 @@ import com.example.flipunlock.hook.system_server.CutoutRemove
 import com.example.flipunlock.hook.system_server.ImmersiveStatusBar
 import com.example.flipunlock.hook.system_server.Flip1OuterCutoutHook
 import com.example.flipunlock.hook.system_server.PackageInstallerSwap
+import com.example.flipunlock.hook.system_server.AodFullAodPinHook
 import com.example.flipunlock.hook.system_server.DisplayStateHook
 import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
@@ -113,6 +114,7 @@ class Main : XposedModule() {
         WallpaperFixHook.hook(param)       // 壁纸尺寸钳制: flip1 右侧黑 + flip2 属性层背景一半黑(2026-08-21 重写恢复注册)
         LockWallpaperFixHook.hook(param)   // 锁屏壁纸不被 ambient 隐藏(修「锁屏没有壁纸→纯黑」) [2026-09-24 新增, refMD §44.12]
         AodHook.hookFramework(param)       // AOD 外屏显示(flip1 only, flip2 内部 SKIP; #3 状态钉 DOZE_AOD) [2026-08-15 恢复]
+        AodFullAodPinHook.hook(param)      // [2026-11-25] 单外屏 AOD: 钉 mIsFullAod=true, 解除 PMS 5s WAKE_UP 回落(aod.state=2 时)
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
