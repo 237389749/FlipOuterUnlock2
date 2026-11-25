@@ -45,8 +45,11 @@
 **Camera** (camera)
 - `CameraFixHook` — outer-screen camera upside-down + black bars (property-1 side effect, `multi_display_type→4`)
 
-**AOD** (aod, flip1 only)
-- `AodHook` — outer-screen AOD when folded (framework + app side)
+**AOD** (aod)
+- `AodHook` — outer-screen AOD when folded (flip1: framework + app side)
+- `AodTraceHook` — doze state / dream lifecycle log + `aod.state` override (single-outer: 4→2 so the panel keeps scanning)
+- `AodBrightnessHook` — AOD brightness log + floor (`aod.brightness`, single-outer default 10%)
+- `AodFullAodPinHook` (system_server) — pin `updateFullAodModeLocked(true)` so PMS does not drop ON back to DOZE_SUSPEND after 5 s
 
 **Gestures** (miuihome)
 - `SFDeviceGestureHook` — outer-screen swipe-up gesture + gesture-disappear no-op guard
