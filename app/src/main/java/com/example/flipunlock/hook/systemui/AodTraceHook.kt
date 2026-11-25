@@ -62,10 +62,13 @@ object AodTraceHook : BaseHook() {
 
         // 2) 亮度在 AodBrightnessHook 里（同一方法只允许一个 hook，见该文件）
 
-        // 3) dream 生命周期（MIUI 宿主类，主 classloader 可见）
-        val host = runCatching {
-            Class.forName("com.android.keyguard.doze.MiuiDozeService")
-        }.getOrNull()
+        // 3) dream 生命周期（MIUI 宿主类；用包自己的 classloader 查，Class.forName 查不到）
+        val host = runCatching { param.classLoader.loadClass("com.android.keyguard.doze.MiuiDozeService") }
+            .getOrNull()
+            ?: runCatching {
+                com.example.flipunlock.hook.util.processClassLoader(param.classLoader)
+                    .loadClass("com.android.keyguard.doze.MiuiDozeService")
+            }.getOrNull()
         if (host == null) {
             log("$TAG: MiuiDozeService 不存在, 生命周期探针跳过")
         } else {
