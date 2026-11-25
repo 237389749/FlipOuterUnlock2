@@ -159,7 +159,11 @@ object Config {
     // CameraFixHook(相机进程属性→4, 修 flip 外屏相机倒置/黑边)开关
     val cameraFix: Boolean get() = enabled && raw("persist.flipunlock.camera.fix", true)
     // VolumeKeyRemapFixHook(音量键方向跟随旋转)开关
-    val volumeKeyRemap: Boolean get() = enabled && raw("persist.flipunlock.volume.keyremap", true)
+    //   2026-11-26 用户决定：**默认关闭**。原 hook 的十层补偿（①..⑩）能让 remap 生效，
+    //   但它靠事件推送同步状态，长期是"改一层怕动另一层"；上游方案（每键求值）见
+    //   refMD FoldState §44.6.9，暂不实施。关闭后音量键固定物理方向（原生 属性1 行为）。
+    //   要恢复：setprop persist.flipunlock.volume.keyremap 1 + 取消 Main.kt 里的注册注释。
+    val volumeKeyRemap: Boolean get() = enabled && raw("persist.flipunlock.volume.keyremap", false)
     // SystemUiKeyguardFix(崩溃环兜底)开关 — 默认 true; 关闭注意 systemui 崩溃环风险
     val keyguardFix: Boolean get() = enabled && raw("persist.flipunlock.ui.keyguardfix", true)
     // FlashlightHook(外屏手电筒"翻转提示"直通: setFlipListening→直接开关 + 跳过提示弹窗)开关

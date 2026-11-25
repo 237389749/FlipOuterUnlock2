@@ -114,7 +114,12 @@ class Main : XposedModule() {
         ImmersiveStatusBar.hook(param)       // [2026-11-23] 外屏默认沉浸: 状态栏 114px 让给应用(forced-hide 通道)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
         RotationFixHook.hook(param)        // 旋转解除(Lite 移植): MiuiOrientationImpl 折叠态开放旋转
-        VolumeKeyRemapFixHook.hook(param)  // 音量键方向跟随旋转 [2026-09-24 重新启用, 用户决定]
+        // [2026-11-26 OFF] 音量键方向跟随旋转：功能链本身是对的（物理 24→25 实测生效），
+        //   但要"每开机必对"需要改成 pull 式（interceptKeyBeforeQueueing 按 DeviceState+rotation
+        //   每键求值），而它的收益不大 —— 用户定：默认关闭、保留代码便于回退。
+        //   方案与变量/结构全图见 refMD FoldState_Device_Identity.md §44.6.9。
+        //   恢复 = 取消下面这行注释 + setprop persist.flipunlock.volume.keyremap 1。
+        // VolumeKeyRemapFixHook.hook(param)
         WallpaperFixHook.hook(param)       // 壁纸尺寸钳制: flip1 右侧黑 + flip2 属性层背景一半黑(2026-08-21 重写恢复注册)
         LockWallpaperFixHook.hook(param)   // 锁屏壁纸不被 ambient 隐藏(修「锁屏没有壁纸→纯黑」) [2026-09-24 新增, refMD §44.12]
         AodHook.hookFramework(param)       // AOD 外屏显示(flip1 only, flip2 内部 SKIP; #3 状态钉 DOZE_AOD) [2026-08-15 恢复]
