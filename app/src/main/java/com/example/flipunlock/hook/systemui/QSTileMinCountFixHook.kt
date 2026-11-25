@@ -126,7 +126,7 @@ object QSTileMinCountFixHook : BaseHook() {
                     hook(setRemovable, Hooker { inner ->
                         // [PROBE 2026-11-25] OS4 上减号不出现：先看这个入口到底有没有被调用、原始值是什么
                         if (probeCount.getAndIncrement() < 30) {
-                            log("QSProbe: ${'$'}{cls.simpleName}.setRemovable(${'$'}{inner.args.firstOrNull()}) → 强制 true")
+                            log("QSProbe: ${cls.simpleName}.setRemovable(${inner.args.firstOrNull()}) → 强制 true")
                         }
                         inner.proceed(arrayOf<Any?>(true))
                     })
@@ -142,7 +142,7 @@ object QSTileMinCountFixHook : BaseHook() {
                     val fAdded = viewCls.field("added")
                     val fMode = viewCls.field("mode")
                     fun snap(v: Any?): String = runCatching {
-                        "removable=${'$'}{fRemovable.getBoolean(v)} added=${'$'}{fAdded.getBoolean(v)} mode=${'$'}{fMode.get(v)}"
+                        "removable=${fRemovable.getBoolean(v)} added=${fAdded.getBoolean(v)} mode=${fMode.get(v)}"
                     }.getOrDefault("?")
                     val n = java.util.concurrent.atomic.AtomicInteger(0)
                     val upd = viewCls.method(
@@ -152,7 +152,7 @@ object QSTileMinCountFixHook : BaseHook() {
                     )
                     hook(upd) { inner ->
                         if (n.getAndIncrement() < 40) {
-                            log("QSProbe: updateRemovable(${'$'}{inner.args.getOrNull(0)}) ${'$'}{snap(inner.thisObject)}")
+                            log("QSProbe: updateRemovable(${inner.args.getOrNull(0)}) ${snap(inner.thisObject)}")
                         }
                         inner.proceed()
                     }
@@ -160,12 +160,12 @@ object QSTileMinCountFixHook : BaseHook() {
                     hook(mark) { inner ->
                         val r = inner.proceed()
                         if (n.getAndIncrement() < 60) {
-                            log("QSProbe: getShowMark -> ${'$'}r ${'$'}{snap(inner.thisObject)}")
+                            log("QSProbe: getShowMark -> $r ${snap(inner.thisObject)}")
                         }
                         r
                     }
                     log("QSProbe: QSTileItemView hooked (removable/added/mode)")
-                }.onFailure { log("QSProbe: QSTileItemView probe failed: ${'$'}{it.message}") }
+                }.onFailure { log("QSProbe: QSTileItemView probe failed: ${it.message}") }
                 result
             })
             log("QSTileMinCountFix: 保险6 PluginFactory.createPluginContext hooked")
@@ -189,7 +189,7 @@ object QSTileMinCountFixHook : BaseHook() {
                 val c7 = java.util.concurrent.atomic.AtomicInteger(0)
                 hook(m) { inner ->
                     val r = inner.proceed()
-                    if (c7.getAndIncrement() < 30) log("QSProbe: isDraggedCellRemovable -> ${'$'}r (强制 true)")
+                    if (c7.getAndIncrement() < 30) log("QSProbe: isDraggedCellRemovable -> $r (强制 true)")
                     true
                 }
                 log("QSTileMinCountFix: 保险7 ✓ ${cls.name}.isDraggedCellRemovable → true")
