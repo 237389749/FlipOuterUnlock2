@@ -192,8 +192,8 @@ fi
         # 但投屏/截图能截到。这里给外屏面板补写该标志：
         #   /sys/class/mi_display/disp-DSI-N/disp_param  feature id 39 = layer_has_aod，格式 "id value"
         # 判据：dmesg 出现 `[secondary] feature: layer_has_aod, value: 1`；随后 LP1 仍能显示 AOD。
-        # 开关: persist.flipunlock.aod.panel_flag (默认 1)。sysfs 不持久，所以每次开机补一次。
-        if [ "$(getprop persist.flipunlock.aod.panel_flag 1)" = "1" ]; then
+        # 开关: persist.flipunlock.aod.panel_flag (默认 0；2026-11-25 实机验证：该标志会被驱动反复清回 0，\n        #       单独补写不足以让 LP1 显示 AOD，仅作实验保留)。sysfs 不持久，所以每次开机补一次。
+        if [ "$(getprop persist.flipunlock.aod.panel_flag 0)" = "1" ]; then
             for n in /sys/class/mi_display/disp-DSI-*; do
                 [ -d "$n" ] || continue
                 info="$(cat "$n/panel_info" 2>/dev/null)"

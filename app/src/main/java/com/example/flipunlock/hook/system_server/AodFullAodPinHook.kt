@@ -46,14 +46,15 @@ object AodFullAodPinHook {
         }
         val target = Config.aodDozeState
         if (target != 2) {
-            log("AodFullAodPin: skip, persist.flipunlock.aod.state=$target (需要 =2 才钉)")
-            return
+            log("AodFullAodPin: 当前 aod.state=$target（不是 2），本次 boot 只装 hook 不生效；设 2 后自动起效")
         }
         safeHook("AodFullAodPin") {
             val cls = param.classLoader.loadClass("com.android.server.power.PowerManagerService")
             val method = cls.method("updateFullAodModeLocked", Boolean::class.javaPrimitiveType!!)
             var logged = false
             hook(method) { chain ->
+                // 运行时判定：只有 aod.state==2 才钉 true（改 prop 不必重启）
+                if (Config.aodDozeState != 2) return@hook chain.proceed()
                 val orig = chain.args.getOrNull(0)
                 if (!logged) {
                     logged = true
@@ -61,7 +62,7 @@ object AodFullAodPinHook {
                 }
                 chain.proceed(arrayOf<Any?>(true))
             }
-            log("AodFullAodPin: ✓ PowerManagerService.updateFullAodModeLocked → true")
+            log("AodFullAodPin: ✓ PowerManagerService.updateFullAodModeLocked hooked (state==2 时钉 true)")
         }
     }
 }
