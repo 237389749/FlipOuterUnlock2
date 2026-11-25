@@ -68,36 +68,65 @@ object AodPanelLightHook : BaseHook() {
             log("AodPanelLight: skip (非单外屏 → 原生 state 4 可亮)")
             return
         }
-        val method = runCatching {
+        // 真正干活的是 3 参重载 setDozeScreenState(int state, int reason, boolean useNormalBrightnessForDoze)：
+        // 1 参版只是 delegate。MIUI 的 DozeService 可能直接调 3 参版，所以优先 hook 3 参。
+        val threeArg = runCatching {
+            android.service.dreams.DreamService::class.java.getDeclaredMethod(
+                "setDozeScreenState",
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+                Boolean::class.javaPrimitiveType!!
+            ).also { it.isAccessible = true }
+        }.getOrNull()
+        val oneArg = runCatching {
             android.service.dreams.DreamService::class.java
                 .getDeclaredMethod("setDozeScreenState", Int::class.javaPrimitiveType!!)
                 .also { it.isAccessible = true }
         }.getOrNull()
-        if (method == null) {
+        if (threeArg == null && oneArg == null) {
             log("AodPanelLight: DreamService.setDozeScreenState 不存在, skip")
             return
         }
-        hook(method) { chain ->
-            val state = chain.args.getOrNull(0) as? Int ?: return@hook chain.proceed()
-            if (state == STATE_FINISH) {
-                // dream 结束的正常熄屏：抬亮会变成"亮屏 + dream 已死 + 触摸无响应"
-                chain.proceed()
-            } else if (!aodEnabledBySetting()) {
-                // 系统设置关了 AOD → 不抬屏（与 refMD §4.1 的 gate 一致）
-                if (lastForcedFrom != -100) {
-                    lastForcedFrom = -100
-                    log("AodPanelLight: doze_always_on != 1 → setDozeScreenState($state) 放行")
-                }
-                chain.proceed()
-            } else {
-                if (lastForcedFrom != state) {
-                    lastForcedFrom = state
-                    log("AodPanelLight: setDozeScreenState($state) → $STATE_ON (单外屏抬亮)")
-                }
+        if (threeArg != null) {
+            hook(threeArg) { chain ->
+                val state = chain.args.getOrNull(0) as? Int ?: return@hook chain.proceed()
+                if (state == STATE_FINISH) return@hook chain.proceed()
+                if (!aodEnabledBySetting()) return@hook passThrough(chain, state)
+                noteForced(state)
+                chain.proceed(arrayOf<Any?>(STATE_ON, chain.args.getOrNull(1) ?: 0, chain.args.getOrNull(2) ?: false))
+            }
+        }
+        if (oneArg != null) {
+            hook(oneArg) { chain ->
+                val state = chain.args.getOrNull(0) as? Int ?: return@hook chain.proceed()
+                if (state == STATE_FINISH) return@hook chain.proceed()
+                if (!aodEnabledBySetting()) return@hook passThrough(chain, state)
+                noteForced(state)
                 chain.proceed(arrayOf<Any?>(STATE_ON))
             }
         }
-        log("AodPanelLight: ✓ DreamService.setDozeScreenState hooked (flip2/single-outer → ON)")
+        log(
+            "AodPanelLight: ✓ DreamService.setDozeScreenState hooked (flip2/single-outer → ON, " +
+                "3arg=${threeArg != null} 1arg=${oneArg != null})"
+        )
+    }
+
+    private fun passThrough(
+        chain: io.github.libxposed.api.XposedInterface.Chain,
+        state: Int
+    ): Any? {
+        if (lastForcedFrom != -100) {
+            lastForcedFrom = -100
+            log("AodPanelLight: doze_always_on != 1 → setDozeScreenState($state) 放行")
+        }
+        return chain.proceed()
+    }
+
+    private fun noteForced(state: Int) {
+        if (lastForcedFrom != state) {
+            lastForcedFrom = state
+            log("AodPanelLight: setDozeScreenState($state) → $STATE_ON (单外屏抬亮)")
+        }
     }
 
     /** AOD 开关：系统设置 `doze_always_on==1` 才算开；取不到 Context 时保守按开处理。 */
