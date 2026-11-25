@@ -39,6 +39,8 @@ object Config {
     private val keys = listOf(
         "persist.flipunlock.enable",
         "persist.flipunlock.display.aod",
+        "persist.flipunlock.aod.trace",
+        "persist.flipunlock.aod.brightness",
         "persist.flipunlock.display.cutout",
         "persist.flipunlock.display.fullscreen",
         "persist.flipunlock.display.immersive",
@@ -70,6 +72,12 @@ object Config {
 
     // Display
     val displayAod: Boolean get() = enabled && raw("persist.flipunlock.display.aod", true)
+    // AOD 全链路探针（只打日志：doze 状态 / dream 生命周期 / 循环检测）。默认 true，纯诊断。
+    val aodTrace: Boolean get() = enabled && raw("persist.flipunlock.aod.trace", true)
+    // AOD 亮度下限（百分比 0..100）。0=不改（只记录）。
+    //   2026-11-25：单外屏下 AOD 亮度档位恒为 i==5 → getDefaultLowBrightness()=1（≈5 nits），
+    //   暗处可见、白天看不见；设 8 表示"AOD 至少 8% 亮度"。见 AodBrightnessHook / refMD §9。
+    val aodBrightnessFloor: Int get() = if (!enabled) 0 else readPropInt("persist.flipunlock.aod.brightness", 0)
     val displayCutout: Boolean get() = enabled && raw("persist.flipunlock.display.cutout", true)
     val displayFullscreen: Boolean get() = enabled && raw("persist.flipunlock.display.fullscreen", true)
     // 外屏默认沉浸（状态栏 114px 让给应用）
@@ -195,6 +203,17 @@ object Config {
                 .invoke(null, key, "") as? String ?: ""
         } catch (_: Exception) {
             ""
+        }
+    }
+
+    /** 读整数属性（读不到/格式错 → default）。 */
+    private fun readPropInt(key: String, default: Int): Int {
+        return try {
+            Class.forName("android.os.SystemProperties")
+                .getDeclaredMethod("getInt", String::class.java, Int::class.javaPrimitiveType!!)
+                .invoke(null, key, default) as? Int ?: default
+        } catch (_: Exception) {
+            default
         }
     }
 }
