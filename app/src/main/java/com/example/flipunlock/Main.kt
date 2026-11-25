@@ -26,6 +26,7 @@ import com.example.flipunlock.hook.systemui.FlashlightHook
 import com.example.flipunlock.hook.systemui.AodBrightnessHook
 import com.example.flipunlock.hook.systemui.AodTraceHook
 import com.example.flipunlock.hook.systemui.AodProxFixHook
+import com.example.flipunlock.hook.systemui.AodLightMapHook
 import com.example.flipunlock.hook.systemui.QSTileMinCountFixHook
 import com.example.flipunlock.hook.systemui.QSPanelWidthFixHook
 import com.example.flipunlock.hook.systemui.SystemUiKeyguardFix
@@ -64,6 +65,7 @@ class Main : XposedModule() {
         AodTraceHook,                   // [2026-11-25] AOD 全链路探针(doze 状态+dream 生命周期+循环检测), 只读不改
         AodBrightnessHook,              // [2026-11-25] AOD 亮度日志 + 可选亮度下限(persist.flipunlock.aod.brightness)
         AodProxFixHook,                 // [2026-11-25] 单外屏: 遮蔽 nonui prox(33171027), 避免 AOD 被 Prox NEAR 暂停后熄屏
+        AodLightMapHook,                // [2026-11-25] 单外屏: 环境光档位 5(明亮室内)当 4 走高亮, 修"AOD 白天看不见"(refMD §11)
         TinyScreenFixHook,              // 属性层死角: getScreenType→0 + isTinyScreen/isFlipTinyScreen→false(修 TIM 通知弹提示)
         ImeBottomSupportHook,           // 设置「全面屏键盘优化」入口: 国际版 IS_INTERNATIONAL_BUILD 硬隐藏解除(scope 需含 com.android.settings)
         ImeNavBarFixHook,               // 输入法底部 48dp 导航栏(⌄/🌐)→高度 0 (scope 需含输入法包)

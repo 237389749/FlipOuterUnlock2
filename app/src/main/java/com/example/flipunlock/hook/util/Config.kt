@@ -43,6 +43,7 @@ object Config {
         "persist.flipunlock.aod.brightness",
         "persist.flipunlock.aod.state",
         "persist.flipunlock.aod.prox_fix",
+        "persist.flipunlock.aod.light_map",
         "persist.flipunlock.display.cutout",
         "persist.flipunlock.display.fullscreen",
         "persist.flipunlock.display.immersive",
@@ -88,6 +89,9 @@ object Config {
     val aodDozeState: Int get() = if (!enabled) 0 else readPropInt("persist.flipunlock.aod.state", if (singleOuter) 2 else 0)
     // AOD 接近感应遮蔽：内屏拆掉后 nonui prox(33171027) 恒 NEAR → AOD 被 pause 后熄屏。默认 true。
     val aodProxFix: Boolean get() = enabled && raw("persist.flipunlock.aod.prox_fix", true)
+    // AOD 环境光档位映射：`xiaomi.sensor.aod`(33171029) 报 5（明亮室内）时插件走「最低档」分支，
+    //   本开关把它当 4（高亮）。详见 refMD AOD_Full_Chain §11。默认 true，仅单外屏生效。
+    val aodLightMap: Boolean get() = enabled && raw("persist.flipunlock.aod.light_map", true)
     val displayCutout: Boolean get() = enabled && raw("persist.flipunlock.display.cutout", true)
     val displayFullscreen: Boolean get() = enabled && raw("persist.flipunlock.display.fullscreen", true)
     // 外屏默认沉浸（状态栏 114px 让给应用）
