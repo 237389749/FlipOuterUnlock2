@@ -122,12 +122,50 @@ object QSTileMinCountFixHook : BaseHook() {
                         continue
                     }
                     // Pitfall #9: 不写 args, proceed(arrayOf(true)) 以 true 参数调用原方法
+                    val probeCount = java.util.concurrent.atomic.AtomicInteger(0)
                     hook(setRemovable, Hooker { inner ->
+                        // [PROBE 2026-11-25] OS4 上减号不出现：先看这个入口到底有没有被调用、原始值是什么
+                        if (probeCount.getAndIncrement() < 30) {
+                            log("QSProbe: ${'$'}{cls.simpleName}.setRemovable(${'$'}{inner.args.firstOrNull()}) → 强制 true")
+                        }
                         inner.proceed(arrayOf<Any?>(true))
                     })
                     hooked = true
                     log("QSTileMinCountFix: 保险6 ✓ ${cls.name}.setRemovable → proceed(true)(减号恒显示)")
                 }
+                // [PROBE 2026-11-25] 减号由视图侧 getShowMark 决定：
+                //   QSTileItemView.getShowMark() = (removable || !added) && mode != NORMAL
+                // 把 removable/added/mode 打出来，判断是"没人调 setRemovable"还是"视图不是这个类"。
+                runCatching {
+                    val viewCls = pluginLoader.loadClass("miui.systemui.controlcenter.qs.tileview.QSTileItemView")
+                    val fRemovable = viewCls.field("removable")
+                    val fAdded = viewCls.field("added")
+                    val fMode = viewCls.field("mode")
+                    fun snap(v: Any?): String = runCatching {
+                        "removable=${'$'}{fRemovable.getBoolean(v)} added=${'$'}{fAdded.getBoolean(v)} mode=${'$'}{fMode.get(v)}"
+                    }.getOrDefault("?")
+                    val n = java.util.concurrent.atomic.AtomicInteger(0)
+                    val upd = viewCls.method(
+                        "updateRemovable",
+                        Boolean::class.javaPrimitiveType!!,
+                        Boolean::class.javaPrimitiveType!!
+                    )
+                    hook(upd) { inner ->
+                        if (n.getAndIncrement() < 40) {
+                            log("QSProbe: updateRemovable(${'$'}{inner.args.getOrNull(0)}) ${'$'}{snap(inner.thisObject)}")
+                        }
+                        inner.proceed()
+                    }
+                    val mark = viewCls.method("getShowMark")
+                    hook(mark) { inner ->
+                        val r = inner.proceed()
+                        if (n.getAndIncrement() < 60) {
+                            log("QSProbe: getShowMark -> ${'$'}r ${'$'}{snap(inner.thisObject)}")
+                        }
+                        r
+                    }
+                    log("QSProbe: QSTileItemView hooked (removable/added/mode)")
+                }.onFailure { log("QSProbe: QSTileItemView probe failed: ${'$'}{it.message}") }
                 result
             })
             log("QSTileMinCountFix: 保险6 PluginFactory.createPluginContext hooked")
@@ -148,7 +186,12 @@ object QSTileMinCountFixHook : BaseHook() {
                         log("QSTileMinCountFix: 保险7 $candidate 无 isDraggedCellRemovable(), skip")
                         continue
                     }
-                hook(m, replaceResult(true))
+                val c7 = java.util.concurrent.atomic.AtomicInteger(0)
+                hook(m) { inner ->
+                    val r = inner.proceed()
+                    if (c7.getAndIncrement() < 30) log("QSProbe: isDraggedCellRemovable -> ${'$'}r (强制 true)")
+                    true
+                }
                 log("QSTileMinCountFix: 保险7 ✓ ${cls.name}.isDraggedCellRemovable → true")
             }
         }
