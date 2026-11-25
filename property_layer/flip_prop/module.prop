@@ -1,6 +1,6 @@
 id=flipunlock_prop
 name=FlipUnlock Companion (prop + touch + display)
-version=8
-versionCode=8
+version=9
+versionCode=9
 author=flip
-description=companion for the LSPosed module: multi_display_type=1; flip2 touch patch (capfold->ENODEV, fixes inner-panel-removed hard reset; OS4.0.3/4.0.4 share one stock, delegated to flip_outer_force when installed); boot-time CLOSED switch for single-outer-screen; phantom second display disabled via display layout table (fixes control-centre/big-folder flicker); lock-screen torch/camera buttons hidden; flip1 CWB guard
+description=companion for the LSPosed module: multi_display_type=1; flip2 touch patch (capfold->ENODEV, fixes inner-panel-removed hard reset; OS4.0.3/4.0.4 share one stock, delegated to flip_outer_force when installed); boot-time CLOSED switch for single-outer-screen; phantom second display disabled via display layout table (fixes control-centre/big-folder flicker); lock-screen torch/camera buttons hidden; outer-panel layer_has_aod flag (AOD visible in LP1); flip1 CWB guard

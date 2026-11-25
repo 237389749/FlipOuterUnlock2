@@ -186,6 +186,27 @@ fi
         elif [ "$(getprop persist.flipunlock.outer.pin_rotation 1)" != "1" ]; then
             echo "rotation pin disabled by persist.flipunlock.outer.pin_rotation=0"
         fi
+
+        # 2026-11-25: 外屏 AOD —— 内核把 layer_has_aod 只发给 primary（内屏，已拆），
+        # 外屏进 LP1 时拿不到"有 AOD 图层"，自刷新显示的是进 doze 前那一帧（黑）→ 屏上没 AOD，
+        # 但投屏/截图能截到。这里给外屏面板补写该标志：
+        #   /sys/class/mi_display/disp-DSI-N/disp_param  feature id 39 = layer_has_aod，格式 "id value"
+        # 判据：dmesg 出现 `[secondary] feature: layer_has_aod, value: 1`；随后 LP1 仍能显示 AOD。
+        # 开关: persist.flipunlock.aod.panel_flag (默认 1)。sysfs 不持久，所以每次开机补一次。
+        if [ "$(getprop persist.flipunlock.aod.panel_flag 1)" = "1" ]; then
+            for n in /sys/class/mi_display/disp-DSI-*; do
+                [ -d "$n" ] || continue
+                info="$(cat "$n/panel_info" 2>/dev/null)"
+                case "$info" in
+                    *sec*)
+                        echo "39 1" > "$n/disp_param" 2>/dev/null
+                        echo "aod: layer_has_aod=1 -> $n ($info) rc=$?"
+                        ;;
+                esac
+            done
+        else
+            echo "aod: layer_has_aod patch disabled (persist.flipunlock.aod.panel_flag=0)"
+        fi
         echo "display0=$(dumpsys display 2>/dev/null | grep -A1 'mDisplayId=0$' | tr '\n' ' ')"
         echo "oops=$(dmesg | grep -c 'Internal error')"
     fi

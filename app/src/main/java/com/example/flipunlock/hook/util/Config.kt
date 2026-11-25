@@ -81,9 +81,9 @@ object Config {
     // 默认：单外屏给 10%（原生 5 nits 白天看不见）；双屏机器 0=不动
     val aodBrightnessFloor: Int get() = if (!enabled) 0 else readPropInt("persist.flipunlock.aod.brightness", if (singleOuter) 10 else 0)
     // AOD doze 状态覆盖：0=原生(4=DOZE_SUSPEND)，3=DOZE，2=ON。
-    //   2026-11-25 单外屏实测：4 下面板 LPM 不刷新（AOD 只存在于合成层），3 是连续刷新。
-    // 默认：单外屏给 2(ON)（4=DOZE_SUSPEND 在这块屏上进 LP1 自刷新=黑）；双屏机器 0=不动
-    val aodDozeState: Int get() = if (!enabled) 0 else readPropInt("persist.flipunlock.aod.state", if (singleOuter) 2 else 0)
+    //   2026-11-25：默认 0。"看得见 AOD" 改由 flip_prop 给外屏补 layer_has_aod 标志实现（LP1 仍省电）；
+    //   抬成 2 会让面板常亮（功耗高），只在排查时用。
+    val aodDozeState: Int get() = if (!enabled) 0 else readPropInt("persist.flipunlock.aod.state", 0)
     val displayCutout: Boolean get() = enabled && raw("persist.flipunlock.display.cutout", true)
     val displayFullscreen: Boolean get() = enabled && raw("persist.flipunlock.display.fullscreen", true)
     // 外屏默认沉浸（状态栏 114px 让给应用）
