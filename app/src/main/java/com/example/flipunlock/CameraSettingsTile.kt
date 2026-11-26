@@ -1,5 +1,6 @@
 package com.example.flipunlock
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Intent
@@ -19,6 +20,7 @@ import android.service.quicksettings.TileService
  */
 class CameraSettingsTile : TileService() {
 
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         val intent = Intent("miui.intent.action.APP_SETTINGS").apply {
             component = ComponentName(
