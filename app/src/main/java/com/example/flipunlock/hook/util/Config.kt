@@ -56,6 +56,7 @@ object Config {
         "persist.flipunlock.ui.qspanelwidth",
         "persist.flipunlock.ime.navbar",
         "persist.flipunlock.camera.fix",
+        "persist.flipunlock.camera.no_mirror",
         "persist.flipunlock.volume.keyremap",
         "persist.flipunlock.ui.keyguardfix",
         "persist.flipunlock.ui.flashlight",
@@ -158,6 +159,11 @@ object Config {
         }
     // CameraFixHook(相机进程属性→4, 修 flip 外屏相机倒置/黑边)开关
     val cameraFix: Boolean get() = enabled && raw("persist.flipunlock.camera.fix", true)
+    // SelfieMirrorHook(外屏相机自拍镜像强制关闭)开关
+    //   2026-11-26: 折叠下"自拍镜像"入口被 isSupportVideoFrontMirror(M3) 隐藏，用户要关掉镜像。
+    //   运行时 hook data.data.v.U() → false（纯运行时，不写磁盘；等价于 pref_front_mirror_boolean_key=false）。
+    //   改完需 am force-stop com.android.camera 才生效。见 refMD Camera.md §13。
+    val cameraNoMirror: Boolean get() = enabled && raw("persist.flipunlock.camera.no_mirror", true)
     // VolumeKeyRemapFixHook(音量键方向跟随旋转)开关
     //   2026-11-26 用户决定：**默认关闭**。原 hook 的十层补偿（①..⑩）能让 remap 生效，
     //   但它靠事件推送同步状态，长期是"改一层怕动另一层"；上游方案（每键求值）见
