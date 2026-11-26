@@ -170,7 +170,8 @@ object Config {
     // SelfieMirrorEntryHook(折叠下让相机设置里的"自拍镜像"入口出现)开关
     //   2026-11-26: 该入口被 isSupportVideoFrontMirror(M3) 挡掉；本钩只在该设置页构建期间让 M3 放行。
     //   改完需 am force-stop com.android.camera。refMD Camera.md §13。
-    val cameraMirrorEntry: Boolean get() = enabled && raw("persist.flipunlock.camera.mirror_entry", true)
+    //   2026-11-26 用户决定：相机设置里本来就有这一项，不需要模块重复放 UI → **默认关**、注册已注释。
+    val cameraMirrorEntry: Boolean get() = enabled && raw("persist.flipunlock.camera.mirror_entry", false)
     // VolumeKeyRemapFixHook(音量键方向跟随旋转)开关
     //   2026-11-26 用户决定：**默认关闭**。原 hook 的十层补偿（①..⑩）能让 remap 生效，
     //   但它靠事件推送同步状态，长期是"改一层怕动另一层"；上游方案（每键求值）见
