@@ -23,6 +23,7 @@ import com.example.flipunlock.hook.system_server.WallpaperFixHook
 import com.example.flipunlock.hook.system_server.LockWallpaperFixHook
 import com.example.flipunlock.hook.camera.CameraFixHook
 import com.example.flipunlock.hook.camera.SelfieMirrorHook
+import com.example.flipunlock.hook.camera.SelfieMirrorEntryHook
 import com.example.flipunlock.hook.systemui.FlashlightHook
 import com.example.flipunlock.hook.systemui.AodBrightnessHook
 import com.example.flipunlock.hook.systemui.AodTraceHook
@@ -71,7 +72,8 @@ class Main : XposedModule() {
         ImeBottomSupportHook,           // 设置「全面屏键盘优化」入口: 国际版 IS_INTERNATIONAL_BUILD 硬隐藏解除(scope 需含 com.android.settings)
         ImeNavBarFixHook,               // 输入法底部 48dp 导航栏(⌄/🌐)→高度 0 (scope 需含输入法包)
         CameraFixHook,                  // 相机进程内 multi_display_type→4: 修 flip 外屏相机倒置+黑边(属性1副作用) [2026-08-15 恢复, flip1/2 通用]
-        SelfieMirrorHook,               // [2026-11-26] 外屏相机自拍镜像关闭: hook data.data.v.U()→false (开关 camera.no_mirror 默认开; refMD Camera.md §13)
+        SelfieMirrorEntryHook,          // [2026-11-26] 折叠下放出相机设置「自拍镜像」入口(仅设置页构建时让 M3 放行; 开关 camera.mirror_entry 默认开)
+        SelfieMirrorHook,               // [2026-11-26] 应急: 强制 hook data.data.v.U()→false (开关 camera.no_mirror 默认关; 首选上面的入口方案)
         WallpaperIdentityFix,           // 壁纸引擎进程内 multi_display_type→4 + which 全集: 修属性1下 miwallpaper 每10s NPE 崩溃环 [2026-11-16 新增, scope 需含 com.miui.miwallpaper]
         // 「观察一期」2026-11-23 已收口（见 refMD Unlock2_Prune_PropertyLayer.md §3）：
         //   FlashlightHook 转正注册（上面）；ControlCenterHook / SogouInputHook /
