@@ -189,10 +189,11 @@ object Config {
     val selfieUnfoldValue: Int
         get() = if (!enabled) 1 else readPropInt("persist.flipunlock.camera.selfie_unfold_value", 0)
     // VideoEncoderMirrorHook(编码器左右翻 → 录像成片去镜像)开关 —— 路线 A（2026-11-27）
-    //   -1 = 关闭（不干预，默认）；1/2/3 = QTI 编码器预处理翻转位（哪个是"左右"待 A/B）。
-    //   保留原生 selfieUnfold=1（预览镜像但方向对），只把成片翻回来。改完需 am force-stop com.android.camera。
+    //   默认 **1**（实测：原生 selfieUnfold=1 下，编码器 flip=1 让成片不再左右镜像，且上下不翻）。
+    //   -1 = 关闭（不干预）；1/2/3 = QTI 编码器预处理翻转位。改完需 am force-stop com.android.camera。
+    //   2026-11-28 00:02 实机验证：录像帧里卡片文字正读、方向正确；同配置照片也正常。
     val videoMirrorFlip: Int
-        get() = if (!enabled) -1 else readPropInt("persist.flipunlock.camera.video_mirror_flip", -1)
+        get() = if (!enabled) -1 else readPropInt("persist.flipunlock.camera.video_mirror_flip", 1)
     // PreviewOrientationProbe(外屏预览方向探针) —— 2026-11-27，调试用，默认 -1（不干预）
     //   把 m6.e.C(int)(= getCameraDisplayOrientation) 强制成指定角度，用于 A/B 0/90/180/270，
     //   找出与外屏 UI 对齐的值。改完需 am force-stop com.android.camera。
