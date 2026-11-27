@@ -44,6 +44,7 @@
 
 **Camera** (camera)
 - `CameraFixHook` — outer-screen camera upside-down + black bars (property-1 side effect, `multi_display_type→4`)
+- `SelfieUnfoldMirrorHook` (2026-11-27) — the real cause of **mirrored videos** on the outer screen: the camera app always writes the session parameter `com.xiaomi.sessionparams.selfieUnfold = 1` (`z3.d.x()`; `K2.b.e0()` → `SECOND_SCREEN_MODE` on a single-outer-screen device), and the HAL then flips the whole session (preview **and** video). Photo mirroring is a separate path (`xiaomi.flip.enabled` / `isFrontMirror()`). The hook forces that session parameter to `0` (matched by the `ka.w0` B0 static-field identity, since `B0.b()` cannot be reflected at runtime) and pins `data.data.v.U()` → `true` to compensate (with `selfieUnfold=0` the HAL otherwise mirrors the still capture). Switch `persist.flipunlock.camera.no_selfie_unfold_mirror` (default **true**), `am force-stop com.android.camera` after changing. Verified on device: preview / video / photo all read correctly with `pref_front_mirror_boolean_key=false`. See refMD `Camera.md §13.10`.
 
 **AOD** (aod)
 - `AodHook` — outer-screen AOD when folded (flip1: framework + app side)
@@ -184,6 +185,14 @@ AGPL-3.0
 
 **相机**（camera）
 - `CameraFixHook` — 外屏相机倒置+黑边（属性1副作用，`multi_display_type→4`）
+- `SelfieUnfoldMirrorHook`（2026-11-27）— **外屏录像镜像**的真因：相机总把 session 参数
+  `com.xiaomi.sessionparams.selfieUnfold` 写成 `1`（`z3.d.x()`；单外屏下 `K2.b.e0()` 里的
+  `SECOND_SCREEN_MODE` 恒 true），HAL 按它把**预览+录像整条 session** 翻；照片走另一条
+  `xiaomi.flip.enabled`（`isFrontMirror()`）。本钩把该参数压成 `0`（按 `ka.w0` 的 B0 静态字段身份认
+  `T`，因为运行时 `B0.b()` 反射拿不到），并把 `data.data.v.U()` 钉 `true` 抵消（否则 `selfieUnfold=0`
+  后照片反而被 HAL 镜像）。开关 `persist.flipunlock.camera.no_selfie_unfold_mirror`（默认 **true**），
+  改完 `am force-stop com.android.camera`。实机验证：`pref_front_mirror_boolean_key=false` 下
+  预览/录像/照片三面均正读。见 refMD `Camera.md §13.10`。
 
 **AOD**（aod，flip1）
 - `AodHook` — 折叠时外屏 AOD（框架侧 + app 侧）
