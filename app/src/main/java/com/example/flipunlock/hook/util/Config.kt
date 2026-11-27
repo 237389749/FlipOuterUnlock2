@@ -58,6 +58,7 @@ object Config {
         "persist.flipunlock.camera.fix",
         "persist.flipunlock.camera.no_mirror",
         "persist.flipunlock.camera.mirror_entry",
+        "persist.flipunlock.camera.no_selfie_unfold_mirror",
         "persist.flipunlock.volume.keyremap",
         "persist.flipunlock.ui.keyguardfix",
         "persist.flipunlock.ui.flashlight",
@@ -172,6 +173,14 @@ object Config {
     //   改完需 am force-stop com.android.camera。refMD Camera.md §13。
     //   2026-11-26 用户决定：相机设置里本来就有这一项，不需要模块重复放 UI → **默认关**、注册已注释。
     val cameraMirrorEntry: Boolean get() = enabled && raw("persist.flipunlock.camera.mirror_entry", false)
+    // SelfieUnfoldMirrorHook(外屏录像/预览不被 session 参数镜像)开关 —— 2026-11-27 新增
+    //   单外屏 = SECOND_SCREEN_MODE ⇒ BaseModuleDevice 往 session 参数写
+    //   com.xiaomi.sessionparams.selfieUnfold = 1 ⇒ HAL 把预览+录像整条 session 左右翻。
+    //   照片不受影响（走 xiaomi.flip.enabled / isFrontMirror()）。
+    //   本钩把该 session 参数改成 0（纯运行时）；默认 true。改完需 am force-stop com.android.camera。
+    //   详见 refMD Camera.md §13.10。
+    val cameraNoSelfieUnfoldMirror: Boolean
+        get() = enabled && raw("persist.flipunlock.camera.no_selfie_unfold_mirror", true)
     // VolumeKeyRemapFixHook(音量键方向跟随旋转)开关
     //   2026-11-26 用户决定：**默认关闭**。原 hook 的十层补偿（①..⑩）能让 remap 生效，
     //   但它靠事件推送同步状态，长期是"改一层怕动另一层"；上游方案（每键求值）见
