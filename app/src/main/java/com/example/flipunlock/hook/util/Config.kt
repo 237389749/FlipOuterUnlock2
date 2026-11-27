@@ -60,6 +60,7 @@ object Config {
         "persist.flipunlock.camera.mirror_entry",
         "persist.flipunlock.camera.no_selfie_unfold_mirror",
         "persist.flipunlock.camera.selfie_unfold_value",
+        "persist.flipunlock.camera.video_mirror_flip",
         "persist.flipunlock.camera.preview_orientation",
         "persist.flipunlock.volume.keyremap",
         "persist.flipunlock.ui.keyguardfix",
@@ -182,11 +183,16 @@ object Config {
     //   本钩把该 session 参数改成 0（纯运行时）；默认 true。改完需 am force-stop com.android.camera。
     //   详见 refMD Camera.md §13.10。
     val cameraNoSelfieUnfoldMirror: Boolean
-        get() = enabled && raw("persist.flipunlock.camera.no_selfie_unfold_mirror", true)
+        get() = enabled && raw("persist.flipunlock.camera.no_selfie_unfold_mirror", false)
     // 强制 session 参数 selfieUnfold 的取值（0 = 掉镜像；1 = 原生）。实测：0 = 预览不镜像但**上下翻 180**；
     //   1 = 预览镜像但方向正确。用本开关 A/B 其它取值（2/3…）看能否两全。改完需 am force-stop com.android.camera。
     val selfieUnfoldValue: Int
         get() = if (!enabled) 1 else readPropInt("persist.flipunlock.camera.selfie_unfold_value", 0)
+    // VideoEncoderMirrorHook(编码器左右翻 → 录像成片去镜像)开关 —— 路线 A（2026-11-27）
+    //   -1 = 关闭（不干预，默认）；1/2/3 = QTI 编码器预处理翻转位（哪个是"左右"待 A/B）。
+    //   保留原生 selfieUnfold=1（预览镜像但方向对），只把成片翻回来。改完需 am force-stop com.android.camera。
+    val videoMirrorFlip: Int
+        get() = if (!enabled) -1 else readPropInt("persist.flipunlock.camera.video_mirror_flip", -1)
     // PreviewOrientationProbe(外屏预览方向探针) —— 2026-11-27，调试用，默认 -1（不干预）
     //   把 m6.e.C(int)(= getCameraDisplayOrientation) 强制成指定角度，用于 A/B 0/90/180/270，
     //   找出与外屏 UI 对齐的值。改完需 am force-stop com.android.camera。
