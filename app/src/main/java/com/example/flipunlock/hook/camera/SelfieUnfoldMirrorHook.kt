@@ -68,16 +68,21 @@ object SelfieUnfoldMirrorHook : BaseHook() {
         val cl = runCatching { processClassLoader(param.classLoader) }.getOrDefault(param.classLoader)
         val fields = runCatching { b0StaticFields(cl) }.getOrDefault(emptyList())
         log("$TAG: ka.w0 B0 静态字段 ${fields.size} 个: ${fields.joinToString(",") { it.first }}")
-        val n = hookSetter(cl, "n9.z1", "a", fields) + hookSetter(cl, "oa.g", "c", fields)
+        val forced = Config.selfieUnfoldValue
+        log("$TAG: 强制 selfieUnfold = $forced")
+        val n = hookSetter(cl, "n9.z1", "a", fields, forced) + hookSetter(cl, "oa.g", "c", fields, forced)
         if (n == 0) log("$TAG: !! 没有钩到 session 参数写点（类名可能变了）")
 
         // 照片补偿：U() → true，等价于「自拍镜像」pref 勾上，抵消 selfieUnfold=0 带来的 still 镜像。
-        runCatching {
-            val cls = cl.loadClass("com.android.camera.data.data.v")
-            val m = cls.getDeclaredMethod("U").apply { isAccessible = true }
-            hook(m, replaceResult(true))
-            log("$TAG: ✓ data.data.v.U() → true（照片镜像补偿）")
-        }.onFailure { log("$TAG: data.data.v.U() hook failed: ${it.message}") }
+        // 只在 forced==0 时挂（其他取值语义未确认，别乱补偿）。
+        if (forced == 0) {
+            runCatching {
+                val cls = cl.loadClass("com.android.camera.data.data.v")
+                val m = cls.getDeclaredMethod("U").apply { isAccessible = true }
+                hook(m, replaceResult(true))
+                log("$TAG: ✓ data.data.v.U() → true（照片镜像补偿）")
+            }.onFailure { log("$TAG: data.data.v.U() hook failed: ${it.message}") }
+        }
     }
 
     /** 把 `ka.w0` 的所有 B0 静态字段读出来（fieldName -> 对象），用于按对象身份认 key。 */
@@ -99,6 +104,7 @@ object SelfieUnfoldMirrorHook : BaseHook() {
         clsName: String,
         methodName: String,
         fields: List<Pair<String, Any?>>,
+        forced: Int,
     ): Int {
         return runCatching {
             val cls = cl.loadClass(clsName)
@@ -119,13 +125,13 @@ object SelfieUnfoldMirrorHook : BaseHook() {
                     val tag = "$clsName.$methodName:${field ?: "?"}=$value"
                     if (seen.add(tag)) log("$TAG: seen $tag")
                 }
-                if (value is Int && value != 0 && field in TARGET_FIELDS) {
-                    log("$TAG: selfieUnfold($field) $value → 0（$clsName.$methodName）")
-                    return@hook chain.proceed(arrayOf(keyObj, 0))
+                if (value is Int && field in TARGET_FIELDS && value != forced) {
+                    log("$TAG: selfieUnfold($field) $value → $forced（$clsName.$methodName）")
+                    return@hook chain.proceed(arrayOf(keyObj, forced))
                 }
                 chain.proceed()
             }
-            log("$TAG: ✓ $clsName.$methodName hooked")
+            log("$TAG: ✓ $clsName.$methodName hooked → $forced")
             1
         }.getOrElse {
             log("$TAG: $clsName.$methodName hook failed: ${it.message}")

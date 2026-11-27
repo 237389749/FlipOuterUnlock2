@@ -59,6 +59,7 @@ object Config {
         "persist.flipunlock.camera.no_mirror",
         "persist.flipunlock.camera.mirror_entry",
         "persist.flipunlock.camera.no_selfie_unfold_mirror",
+        "persist.flipunlock.camera.selfie_unfold_value",
         "persist.flipunlock.camera.preview_orientation",
         "persist.flipunlock.volume.keyremap",
         "persist.flipunlock.ui.keyguardfix",
@@ -182,6 +183,10 @@ object Config {
     //   详见 refMD Camera.md §13.10。
     val cameraNoSelfieUnfoldMirror: Boolean
         get() = enabled && raw("persist.flipunlock.camera.no_selfie_unfold_mirror", true)
+    // 强制 session 参数 selfieUnfold 的取值（0 = 掉镜像；1 = 原生）。实测：0 = 预览不镜像但**上下翻 180**；
+    //   1 = 预览镜像但方向正确。用本开关 A/B 其它取值（2/3…）看能否两全。改完需 am force-stop com.android.camera。
+    val selfieUnfoldValue: Int
+        get() = if (!enabled) 1 else readPropInt("persist.flipunlock.camera.selfie_unfold_value", 0)
     // PreviewOrientationProbe(外屏预览方向探针) —— 2026-11-27，调试用，默认 -1（不干预）
     //   把 m6.e.C(int)(= getCameraDisplayOrientation) 强制成指定角度，用于 A/B 0/90/180/270，
     //   找出与外屏 UI 对齐的值。改完需 am force-stop com.android.camera。
