@@ -21,7 +21,7 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  *
  * ## 做法
  * 相机用的是 `kq.t`（CED MiMediaCodecRecorder）→ `kq.e.call()` 组好 `MediaFormat` → `kq.h.a()` 配编码器。
- * 本钩直接钩 `android.media.MediaCodec.configure(MediaFormat, …)`：对 `video/*` 的 format
+ * 本钩直接钩 `android.media.MediaCodec.configure(MediaFormat, …)`：对 mime 以 video/ 开头的 format
  * 写入 `vendor.qti-ext-enc-preprocess-mirror.flip = <persist.flipunlock.camera.video_mirror_flip>`。
  * 该键就是 `kq.e` 从 `video-param-mirror-state` 解析出来写的那个（QTI 编码器预处理翻转）。
  *
