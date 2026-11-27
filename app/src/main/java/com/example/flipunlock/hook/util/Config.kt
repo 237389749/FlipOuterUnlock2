@@ -112,10 +112,10 @@ object Config {
     val displayState: Boolean get() = enabled && raw("persist.flipunlock.display.state", true)
     // 第三方 App 在外屏「上下颠倒」（相机取景差 180°）—— 2026-11-28 新增
     //   外屏面板 installOrientation=ROTATION_180，框架为让内容看着正按 rotation=180 合成，
-    //   于是 Display.getRotation() 对 App 报 2；而内容相对设备自然方向其实是正的 →
-    //   标准 Camera2/CameraX 公式 (sensor - getRotation()) 恒差 180°，扫码取景上下颠倒。
-    //   做法：system_server 显示信息出站口对第三方 App 返回 (rotation + installOrientation) mod 4 的副本；
-    //   系统相机/SystemUI/桌面等 DENY 包一律不动。详见 refMD Camera.md §13.12。
+    //   于是稳定态下 Display.getRotation() 对 App 报 2；而相机传感器方向是相对设备自然方向定义的，
+    //   标准公式 (sensor - rotation) 恒差 180° → 扫码取景上下颠倒（系统相机靠 HAL 的 selfieUnfold=1 自补）。
+    //   做法：system_server 显示信息出站口，对外屏 + 第三方 App 把「竖屏 180」归一化成 0；
+    //   启动早期上游给的是 base 0 时不动（避免反向补 180，实测踩过）。详见 refMD Camera.md §13.12。
     //   默认 true；设 0 = 完全原生（重启生效）。
     val thirdPartyRotation: Boolean
         get() = enabled && raw("persist.flipunlock.display.thirdparty_rotation", true)

@@ -1,6 +1,7 @@
 package com.example.flipunlock.hook.system_server
 
 import android.content.Context
+import android.view.Surface
 import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.util.hook
 import com.example.flipunlock.hook.util.log
@@ -19,22 +20,32 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * ## 真因（2026-11-28 判据）
  * 外屏面板是 `installOrientation = ROTATION_180`（相对设备自然方向物理装反），框架为了让内容
- * 看着正，按 `rotation = ROTATION_180` 合成 → `Display.getRotation()` 对 App 报 2。
- * 但**内容相对设备自然方向其实是正的**（180 装反 + 180 合成 = 0），而相机传感器方向是相对
- * 设备自然方向定义的 → 标准 Camera2/CameraX 公式 `(sensorOrientation - getRotation())` 恒差 180°。
+ * 看着正，按 `rotation = ROTATION_180` 合成 → 稳定态下 `Display.getRotation()` 对 App 报 2。
+ * 但**内容相对设备自然方向其实是正的**（180 装反 + 180 合成 = 0），而 `SENSOR_ORIENTATION` 是
+ * 相对设备自然方向定义的 → 标准公式 `(sensorOrientation - rotation)` 恒差 180°
+ * （Via/Camera1 实测拿到 rotation=2 时算出 270，正确值是 90）。
  *
  * 实测（`dumpsys display`，合盖态）：外屏 `mBaseDisplayInfo.rotation 0` /
  * `mOverrideDisplayInfo.rotation 2` / `installOrientation ROTATION_180`，旋转 setting 全为 0。
- * 系统相机不受影响：`CameraFixHook` 把相机进程伪造成 flip 身份，MIUI 相机自带 180° 补偿
- * （`selfieUnfold` / `K2.h.f`），所以**相机不能被本钩改到**。
+ * 系统相机不受影响：它把预览裸 `Surface` 直接交给 HAL（App 侧不下发任何旋转），180° 补偿在
+ * HAL 的 `selfieUnfold=1`；`K2.h.f()`/`Ce.C.e()` 只喂 UI 叠加层(人脸/AF 框)，不控预览。
+ * 所以**相机进程绝不能被本钩改到**（否则它自己的方向判定会翻）。
  *
  * ## 做法
  * App 的 `Display.getRotation()` 读 `Display.mDisplayInfo.rotation`，而 `mDisplayInfo` 只来自
  * `IDisplayManager.getDisplayInfo(displayId)` 这一次 binder 调用（`DisplayManagerGlobal`）。
- * 于是在 system_server 侧钩该实现：`displayId == 0` 且调用方不是系统/DENY 包时，返回
- * `(rotation + installOrientation) mod 4` 的**副本**。
- * - 合盖竖屏：2 + 2 = 0 → 第三方 App 算出的取景方向正确。
- * - `installOrientation` 为 0（普通机 / 内屏）→ 自动 no-op。
+ * 于是在 system_server 侧钩该实现：`displayId == 0`、调用方不是系统/DENY 包、且出站值是
+ * **竖屏 180**（外屏按 installOrientation=180 合成的那种状态）时，返回 `rotation = 0` 的**副本**。
+ * - 效果：第三方 App 的 `(sensorOrientation - rotation)` 从 270 变成 90 —— 与系统相机一致。
+ * - 启动早期上游给的是 base `0`（WMS 的 override 还没下发），此时**不动**；
+ *   曾按 `(rotation + installOrientation) mod 4` 补，结果那一瞬间反而把 0 补成 180（实测踩过）。
+ * - 横屏（90/270）暂不处理：外屏实际不会转，等有实测再说。
+ *
+ * ## 验证（2026-11-28，Via 浏览器 Camera1 路径自带探针）
+ * Via 的扫码库 `com.tuyafeng.scanner.camera.b` 走 Camera1，公式
+ * `(SensorOrientation - rotation*90 + 360) % 360` 并打日志 `Camera Display Orientation: N`；
+ * rotation 来自 `WindowManager.getDefaultDisplay().getRotation()`。
+ * 系统相机进程（DENY）日志 `checkDisplayOrientation: 0 | 90` 亦确认 App 侧拿到的是 0 才是正方向。
  *
  * **不注入第三方进程**：LSPosed scope 只有系统组件；改显示信息出站口一处即可覆盖所有第三方
  * App（含以后新装的），不必给每个 App 勾 scope，也不往微信里塞 hook。
@@ -47,7 +58,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * ## 开关
  * `persist.flipunlock.display.thirdparty_rotation`（默认 **true**；`0` = 完全原生）。重启生效。
- * 日志判据：`TpRotation: uid=10323 display0 rotation=2 install=2 -> 0`。
+ * 日志判据：`TpRotation: uid=10310 display0 rotation=2 install=2 -> 0`。
  */
 object ThirdPartyDisplayRotationHook {
 
@@ -203,7 +214,7 @@ object ThirdPartyDisplayRotationHook {
         }
     }
 
-    /** 该补成多少：只对 display 0（外屏）+ 非系统/非 DENY uid + installOrientation != 0 生效。 */
+    /** 该补成多少：只对 display 0（外屏）+ 非系统/非 DENY uid + 竖屏 180 这一种状态生效。 */
     private fun corrected(
         displayId: Int,
         info: Any,
@@ -213,9 +224,11 @@ object ThirdPartyDisplayRotationHook {
         if (displayId != 0) return null
         if (!allowUid(android.os.Binder.getCallingUid())) return null
         val rot = rotationField.getInt(info)
-        val install = installField.getInt(info)
-        val fixed = (rot + install) and 3
-        return if (fixed == rot) null else fixed
+        // 只做"竖屏归一化": 外屏按 180 合成时 App 应看到 0; 其它值(含启动早期的 0)一律不动。
+        // 启动早期上游给的是 base 0(override 还没下发), 这时若按 install 加 180 会补错方向 —— 已实测踩过。
+        if (rot != Surface.ROTATION_180) return null
+        if (installField.getInt(info) != Surface.ROTATION_180) return null
+        return Surface.ROTATION_0
     }
 
     private fun allowUid(uid: Int): Boolean {
