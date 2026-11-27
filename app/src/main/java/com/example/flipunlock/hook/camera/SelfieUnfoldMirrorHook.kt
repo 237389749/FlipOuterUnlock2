@@ -83,8 +83,13 @@ object SelfieUnfoldMirrorHook : BaseHook() {
             hook(m) { chain ->
                 val args = chain.args
                 val value = args.getOrNull(1)
-                if (value is Int && value != 0 && isSelfieUnfoldKey(args.getOrNull(0))) {
-                    log("$TAG: selfieUnfold $value → 0（$clsName.$methodName）")
+                val keyName = keyName(args.getOrNull(0))
+                if (value is Int) {
+                    val tag = "$clsName.$methodName:$keyName=$value"
+                    if (seen.add(tag)) log("$TAG: seen $tag")
+                }
+                if (value is Int && value != 0 && isMirrorKey(keyName)) {
+                    log("$TAG: $keyName $value → 0（$clsName.$methodName）")
                     return@hook chain.proceed(arrayOf(args[0], 0))
                 }
                 chain.proceed()
@@ -98,10 +103,19 @@ object SelfieUnfoldMirrorHook : BaseHook() {
     }
 
     /** B0 包装：`b()` 取底层 Key，`getName()` 取厂商 tag 名。 */
-    private fun isSelfieUnfoldKey(wrapper: Any?): Boolean = runCatching {
-        if (wrapper == null) return@runCatching false
-        val key = wrapper.javaClass.getMethod("b").invoke(wrapper) ?: return@runCatching false
-        val name = key.javaClass.getMethod("getName").invoke(key) as? String
-        name == KEY_NAME
-    }.getOrDefault(false)
+    private fun keyName(wrapper: Any?): String? = runCatching {
+        if (wrapper == null) return@runCatching null
+        val key = wrapper.javaClass.getMethod("b").invoke(wrapper) ?: return@runCatching null
+        key.javaClass.getMethod("getName").invoke(key) as? String
+    }.getOrNull()
+
+    /** 诊断期宽松匹配：名字里带 selfie/mirror/flip 的都算；确认后收紧成精确 key。 */
+    private fun isMirrorKey(name: String?): Boolean {
+        if (name == null) return false
+        if (name == KEY_NAME) return true
+        val n = name.lowercase()
+        return n.contains("selfie") || n.contains("mirror") || n.contains("flip")
+    }
+
+    private val seen = java.util.Collections.synchronizedSet(HashSet<String>())
 }
