@@ -25,6 +25,7 @@ import com.example.flipunlock.hook.camera.CameraFixHook
 import com.example.flipunlock.hook.camera.SelfieMirrorHook
 import com.example.flipunlock.hook.camera.SelfieMirrorEntryHook
 import com.example.flipunlock.hook.camera.SelfieUnfoldMirrorHook
+import com.example.flipunlock.hook.camera.PreviewOrientationProbe
 import com.example.flipunlock.hook.systemui.FlashlightHook
 import com.example.flipunlock.hook.systemui.AodBrightnessHook
 import com.example.flipunlock.hook.systemui.AodTraceHook
@@ -78,6 +79,7 @@ class Main : XposedModule() {
         // SelfieMirrorEntryHook,
         SelfieMirrorHook,               // [2026-11-26] 应急: 强制 hook data.data.v.U()→false (开关 camera.no_mirror 默认关; 首选上面的入口方案)
         SelfieUnfoldMirrorHook,         // [2026-11-27] 外屏录像镜像真因: session 参数 selfieUnfold 恒 1 → 改成 0 (开关默认开)
+        PreviewOrientationProbe,        // [2026-11-27] 调试: m6.e.C(int) 强制预览方向(persist.flipunlock.camera.preview_orientation, 默认 -1 不干预)
         WallpaperIdentityFix,           // 壁纸引擎进程内 multi_display_type→4 + which 全集: 修属性1下 miwallpaper 每10s NPE 崩溃环 [2026-11-16 新增, scope 需含 com.miui.miwallpaper]
         // 「观察一期」2026-11-23 已收口（见 refMD Unlock2_Prune_PropertyLayer.md §3）：
         //   FlashlightHook 转正注册（上面）；ControlCenterHook / SogouInputHook /

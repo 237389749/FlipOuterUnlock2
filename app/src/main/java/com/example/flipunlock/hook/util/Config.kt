@@ -59,6 +59,7 @@ object Config {
         "persist.flipunlock.camera.no_mirror",
         "persist.flipunlock.camera.mirror_entry",
         "persist.flipunlock.camera.no_selfie_unfold_mirror",
+        "persist.flipunlock.camera.preview_orientation",
         "persist.flipunlock.volume.keyremap",
         "persist.flipunlock.ui.keyguardfix",
         "persist.flipunlock.ui.flashlight",
@@ -181,6 +182,11 @@ object Config {
     //   详见 refMD Camera.md §13.10。
     val cameraNoSelfieUnfoldMirror: Boolean
         get() = enabled && raw("persist.flipunlock.camera.no_selfie_unfold_mirror", true)
+    // PreviewOrientationProbe(外屏预览方向探针) —— 2026-11-27，调试用，默认 -1（不干预）
+    //   把 m6.e.C(int)(= getCameraDisplayOrientation) 强制成指定角度，用于 A/B 0/90/180/270，
+    //   找出与外屏 UI 对齐的值。改完需 am force-stop com.android.camera。
+    val previewOrientationOverride: Int
+        get() = if (!enabled) -1 else readPropInt("persist.flipunlock.camera.preview_orientation", -1)
     // VolumeKeyRemapFixHook(音量键方向跟随旋转)开关
     //   2026-11-26 用户决定：**默认关闭**。原 hook 的十层补偿（①..⑩）能让 remap 生效，
     //   但它靠事件推送同步状态，长期是"改一层怕动另一层"；上游方案（每键求值）见
