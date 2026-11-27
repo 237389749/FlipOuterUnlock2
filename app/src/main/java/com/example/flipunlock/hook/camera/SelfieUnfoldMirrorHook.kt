@@ -7,51 +7,47 @@ import com.example.flipunlock.hook.util.hook
 import com.example.flipunlock.hook.util.log
 import com.example.flipunlock.hook.util.processClassLoader
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
+import java.lang.reflect.Modifier
 
 /**
  * 外屏录像「镜像」的真正源头：session 参数 `com.xiaomi.sessionparams.selfieUnfold`（2026-11-27）。
  *
  * ## 现象
- * 折叠/单外屏，系统相机录出来的 **mp4 左右反**（文字反、二维码反），而同一场景的 **照片正常**。
- * 取景预览也是反的。
+ * 折叠/单外屏，系统相机录出来的 **mp4 左右反**（文字反、二维码反），而同一场景的 **照片正常**；
+ * 取景预览同样是反的。
  *
- * ## 实测证据（flip2 / OS4.0.3 / 3.27-unlock2）
- * 录 5 s 视频，logcat（tag `MCAM_VideoModuleDevice`）只有两条相关参数：
+ * ## 实测证据（flip2 / OS4.0.3 / 3.27-unlock2，pref 分别 true/false 各录一次）
  * ```
- * updateFrontMirrorEnabledParameter: parameter = false   ← xiaomi.flip.enabled（session）false
- * updatePreviewMirrorParam: 1                            ← selfieUnfold = 1
- * applyFrontMirror: false                                ← 录像 request 也不翻
+ * MCAM_VideoModuleDevice: updateFrontMirrorEnabledParameter: parameter = false   ← xiaomi.flip.enabled=false
+ * MCAM_VideoModuleDevice: updatePreviewMirrorParam: 1                            ← 就是本钩要压的 session 参数
+ * MCAM_CaptureRequestBuilder: applyFrontMirror: false                            ← 录像 request 不翻
  * ```
- * ⇒ 抓帧后 mp4 确实左右反 ⇒ 只能是 `selfieUnfold=1` 让 HAL 把 **整个 session（预览+录像）** 翻了。
+ * 抓帧后 mp4 确实左右反、容器 tkhd 无负行列式 ⇒ 是 HAL 按 session 参数把预览+录像整条翻了。
  *
- * ## 为什么是 1
- * `z3.d.x(k)`（`BaseModuleDevice`，视频走 `VideoModuleDevice`）：
- * ```
- * int i = ((Se.b.Y() && K2.m.b()) || K2.b.e0()) ? 1 : 0;
- * if (caps.v0(w0.T)) { z1.a(w0.T, i); }     // w0.T = E1.F0(5) = "com.xiaomi.sessionparams.selfieUnfold"
- * ```
- * `K2.b.e0() = X() || c0() || d0()`，其中 `d0() = (o() == SECOND_SCREEN_MODE)` —— 单外屏就是
- * SECOND_SCREEN_MODE ⇒ **恒为 1**，与「自拍镜像」pref 无关。
- * 这也解释了：改 `pref_front_mirror_boolean_key` 只动照片（走 `xiaomi.flip.enabled` / `isFrontMirror()`），
- * 动不了录像。
+ * ## 为什么恒 1
+ * `z3.d.x(k)`（视频走 `VideoModuleDevice`）：
+ * `int i = ((Se.b.Y() && K2.m.b()) || K2.b.e0()) ? 1 : 0;`
+ * 其中 `K2.b.e0() = X() || c0() || d0()`，`d0() = (o() == SECOND_SCREEN_MODE)` ——
+ * 单外屏就是 SECOND_SCREEN_MODE ⇒ 恒 true。与「自拍镜像」pref 无关（pref 只管照片）。
  *
  * ## 做法
- * 运行时把写进 session 参数的这个值改成 `0`（纯运行时，不写磁盘；卸载即恢复）。
- * 钩两个写点（哪个存在钩哪个）：
- *   - `n9.z1.a(B0, T)`  ← `BaseModuleDevice`/`VideoModuleDevice` 走这个（已实测命中）
- *   - `oa.g.c(B0, T)`   ← 另一条 applier 路径（`Ut.a.d` 用它）
- * 只对 `key.b().getName() == "com.xiaomi.sessionparams.selfieUnfold"` 的条目生效，其余原样放行。
+ * 钩 session 参数写点 `n9.z1.a(B0 key, T value)`（另一条 applier `oa.g.c` 一并钩），
+ * 用 **B0 静态字段身份** 认出 `ka.w0.T`（= selfieUnfold 的包装），把值改成 0。
+ * 纯运行时，不写磁盘；卸载即恢复。
  *
  * ## 开关
- * `persist.flipunlock.camera.no_selfie_unfold_mirror`（默认 **true**）。改完需
- * `am force-stop com.android.camera`。
+ * `persist.flipunlock.camera.no_selfie_unfold_mirror`（默认 **true**），改完 `am force-stop com.android.camera`。
  */
 object SelfieUnfoldMirrorHook : BaseHook() {
 
     override val targetPackages = listOf("com.android.camera")
 
     private const val TAG = "UnfoldMirror"
-    private const val KEY_NAME = "com.xiaomi.sessionparams.selfieUnfold"
+
+    /** `ka.w0` 里 selfieUnfold 的字段名（反编译为 `T`）。运行时若识别不到会只打日志。 */
+    private val TARGET_FIELDS = setOf("T")
+
+    private val seen = java.util.Collections.synchronizedSet(HashSet<String>())
 
     override fun setupHooks(param: PackageReadyParam) {
         val process = currentProcessName()
@@ -64,12 +60,32 @@ object SelfieUnfoldMirrorHook : BaseHook() {
             return
         }
         val cl = runCatching { processClassLoader(param.classLoader) }.getOrDefault(param.classLoader)
-        val n = hookSetter(cl, "n9.z1", "a") + hookSetter(cl, "oa.g", "c")
+        val fields = runCatching { b0StaticFields(cl) }.getOrDefault(emptyList())
+        log("$TAG: ka.w0 B0 静态字段 ${fields.size} 个: ${fields.joinToString(",") { it.first }}")
+        val n = hookSetter(cl, "n9.z1", "a", fields) + hookSetter(cl, "oa.g", "c", fields)
         if (n == 0) log("$TAG: !! 没有钩到 session 参数写点（类名可能变了）")
     }
 
-    /** 钩 `(B0 key, T value)` 这种 session 参数写点；只改 selfieUnfold。 */
-    private fun hookSetter(cl: ClassLoader, clsName: String, methodName: String): Int {
+    /** 把 `ka.w0` 的所有 B0 静态字段读出来（fieldName -> 对象），用于按对象身份认 key。 */
+    private fun b0StaticFields(cl: ClassLoader): List<Pair<String, Any?>> {
+        val b0 = cl.loadClass("ka.B0")
+        val w0 = cl.loadClass("ka.w0")
+        return w0.declaredFields
+            .filter { Modifier.isStatic(it.modifiers) && b0.isAssignableFrom(it.type) }
+            .mapNotNull { f ->
+                runCatching {
+                    f.isAccessible = true
+                    f.name to f.get(null)
+                }.getOrNull()
+            }
+    }
+
+    private fun hookSetter(
+        cl: ClassLoader,
+        clsName: String,
+        methodName: String,
+        fields: List<Pair<String, Any?>>,
+    ): Int {
         return runCatching {
             val cls = cl.loadClass(clsName)
             val m = cls.declaredMethods.firstOrNull {
@@ -83,14 +99,15 @@ object SelfieUnfoldMirrorHook : BaseHook() {
             hook(m) { chain ->
                 val args = chain.args
                 val value = args.getOrNull(1)
-                val keyName = keyName(args.getOrNull(0))
+                val keyObj = args.getOrNull(0)
+                val field = fields.firstOrNull { it.second === keyObj }?.first
                 if (value is Int) {
-                    val tag = "$clsName.$methodName:$keyName=$value"
+                    val tag = "$clsName.$methodName:${field ?: "?"}=$value"
                     if (seen.add(tag)) log("$TAG: seen $tag")
                 }
-                if (value is Int && value != 0 && isMirrorKey(keyName)) {
-                    log("$TAG: $keyName $value → 0（$clsName.$methodName）")
-                    return@hook chain.proceed(arrayOf(args[0], 0))
+                if (value is Int && value != 0 && field in TARGET_FIELDS) {
+                    log("$TAG: selfieUnfold($field) $value → 0（$clsName.$methodName）")
+                    return@hook chain.proceed(arrayOf(keyObj, 0))
                 }
                 chain.proceed()
             }
@@ -101,21 +118,4 @@ object SelfieUnfoldMirrorHook : BaseHook() {
             0
         }
     }
-
-    /** B0 包装：`b()` 取底层 Key，`getName()` 取厂商 tag 名。 */
-    private fun keyName(wrapper: Any?): String? = runCatching {
-        if (wrapper == null) return@runCatching null
-        val key = wrapper.javaClass.getMethod("b").invoke(wrapper) ?: return@runCatching null
-        key.javaClass.getMethod("getName").invoke(key) as? String
-    }.getOrNull()
-
-    /** 诊断期宽松匹配：名字里带 selfie/mirror/flip 的都算；确认后收紧成精确 key。 */
-    private fun isMirrorKey(name: String?): Boolean {
-        if (name == null) return false
-        if (name == KEY_NAME) return true
-        val n = name.lowercase()
-        return n.contains("selfie") || n.contains("mirror") || n.contains("flip")
-    }
-
-    private val seen = java.util.Collections.synchronizedSet(HashSet<String>())
 }
