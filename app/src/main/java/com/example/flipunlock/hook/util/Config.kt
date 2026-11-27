@@ -12,6 +12,7 @@ package com.example.flipunlock.hook.util
  *   persist.flipunlock.display.aod            # 外屏 AOD（flip1）
  *   persist.flipunlock.display.cutout         # 去挖孔
  *   persist.flipunlock.display.fullscreen     # 去 size-compat letterbox
+ *   persist.flipunlock.display.thirdparty_rotation # 第三方 App 外屏取景翻转 180° 补正
  *   persist.flipunlock.rotation.fix           # 旋转解除
  *   persist.flipunlock.volume.keyremap        # 音量键跟随旋转
  *   persist.flipunlock.wallpaper.fix          # 壁纸尺寸钳制
@@ -48,6 +49,7 @@ object Config {
         "persist.flipunlock.display.fullscreen",
         "persist.flipunlock.display.immersive",
         "persist.flipunlock.display.state",
+        "persist.flipunlock.display.thirdparty_rotation",
         "persist.flipunlock.gesture.sf",
         "persist.flipunlock.rotation.fix",
         "persist.flipunlock.wallpaper.fix",
@@ -108,6 +110,15 @@ object Config {
     //   2026-11-24: 幽灵屏由 flip_prop 的布局表关掉后, 本 hook 对正常路径(CLOSED)已冗余,
     //   但 state 3(OPENED) 没有它会把锁屏/桌面渲染成放大版 -> 保留。
     val displayState: Boolean get() = enabled && raw("persist.flipunlock.display.state", true)
+    // 第三方 App 在外屏「上下颠倒」（相机取景差 180°）—— 2026-11-28 新增
+    //   外屏面板 installOrientation=ROTATION_180，框架为让内容看着正按 rotation=180 合成，
+    //   于是 Display.getRotation() 对 App 报 2；而内容相对设备自然方向其实是正的 →
+    //   标准 Camera2/CameraX 公式 (sensor - getRotation()) 恒差 180°，扫码取景上下颠倒。
+    //   做法：system_server 显示信息出站口对第三方 App 返回 (rotation + installOrientation) mod 4 的副本；
+    //   系统相机/SystemUI/桌面等 DENY 包一律不动。详见 refMD Camera.md §13.12。
+    //   默认 true；设 0 = 完全原生（重启生效）。
+    val thirdPartyRotation: Boolean
+        get() = enabled && raw("persist.flipunlock.display.thirdparty_rotation", true)
 
     // App
     // AppInterceptUnlock(外屏启动拦截解除, **OS4.0.3+ 新版本专用通道**)开关

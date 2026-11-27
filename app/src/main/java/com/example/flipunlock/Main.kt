@@ -16,6 +16,7 @@ import com.example.flipunlock.hook.system_server.Flip1OuterCutoutHook
 import com.example.flipunlock.hook.system_server.PackageInstallerSwap
 import com.example.flipunlock.hook.system_server.AodFullAodPinHook
 import com.example.flipunlock.hook.system_server.DisplayStateHook
+import com.example.flipunlock.hook.system_server.ThirdPartyDisplayRotationHook
 import com.example.flipunlock.hook.system_server.Flip2CutoutLetterboxHook
 import com.example.flipunlock.hook.system_server.RotationFixHook
 import com.example.flipunlock.hook.system_server.VolumeKeyRemapFixHook
@@ -122,6 +123,11 @@ class Main : XposedModule() {
         // 2026-11-24: 保留 ! v3.8 曾与 DisplayKeepOnHook 一起退役, 实测 state 3(OPENED)
         // 会渲染成放大版(两次独立启动帧哈希相同), 恢复后正常; 见 refMD §44.17。
         DisplayStateHook.hook(param)
+        // [2026-11-28] 第三方 App 在外屏取景上下颠倒（相机方向恒差 180°）：
+        //   外屏 installOrientation=180 但框架按 rotation=180 合成 → App 侧标准公式差 180°。
+        //   在显示信息出站口对第三方 App 返回 (rotation + installOrientation) mod 4 的副本；
+        //   系统相机/SystemUI/桌面等 DENY 包不动。见 refMD Camera.md §13.12。
+        ThirdPartyDisplayRotationHook.hook(param)
         PackageInstallerSwap.hook(param)   // [2026-11-25] 默认安装器换 AOSP: 状态层 + 路由层 (find/installer_swap_spec.md)
         ImmersiveStatusBar.hook(param)       // [2026-11-23] 外屏默认沉浸: 状态栏 114px 让给应用(forced-hide 通道)
         AppFullscreen.hook(param)          // size-compat 禁用(保留,全屏相关)
